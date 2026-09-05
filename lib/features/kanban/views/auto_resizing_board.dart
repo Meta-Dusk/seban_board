@@ -1,15 +1,13 @@
-import 'package:appflowy_board/appflowy_board.dart';
 import 'package:flutter/material.dart';
-
+import 'package:drag_and_drop_lists/drag_and_drop_lists.dart';
 import '../models/kanban_task.dart';
-
-typedef AsyncDynamicAppFlowyGroupFunc =
-    Future<dynamic> Function(AppFlowyGroupData<dynamic> columnData);
 
 class AutoResizingBoard extends StatelessWidget {
   const AutoResizingBoard({
     super.key,
-    required this.controller,
+    required this.categories,
+    required this.onItemReorder,
+    required this.onListReorder,
     required this.onPopOutCategory,
     required this.onAddTask,
     required this.onEditTask,
@@ -17,8 +15,10 @@ class AutoResizingBoard extends StatelessWidget {
     required this.processingGroupId,
   });
 
-  final AppFlowyBoardController controller;
-  final Future<void> Function(AppFlowyGroupData columnData) onPopOutCategory;
+  final List<KanbanCategory> categories;
+  final void Function(int, int, int, int) onItemReorder;
+  final void Function(int, int) onListReorder;
+  final Future<void> Function(KanbanCategory columnData) onPopOutCategory;
   final void Function(String groupId) onAddTask;
   final void Function(String groupId, KanbanTask task) onEditTask;
   final bool isProcessing;
@@ -27,35 +27,56 @@ class AutoResizingBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Expanded(
     child: LayoutBuilder(
-      builder: (context, constraints) {
-        final numColumns = controller.groupIds.length;
+      builder: (_, constraints) {
+        final numColumns = categories.length;
+        if (numColumns == 0) return const SizedBox();
+
         final totalPadding = (numColumns + 1) * 16.0;
         final columnWidth = (constraints.maxWidth - totalPadding) / numColumns;
 
-        return AppFlowyBoard(
-          controller: controller,
-          groupConstraints: .tightFor(width: columnWidth),
-          config: AppFlowyBoardConfig(
-            groupBackgroundColor: Colors.grey.withValues(alpha: 0.05),
-            stretchGroupHeight: true,
+        final categoryList = categories.map(
+          (category) => DragAndDropList(
+            header: _HeaderWidget(
+              columnData: category,
+              processingGroupId: processingGroupId,
+              isProcessing: isProcessing,
+              onPopOutCategory: onPopOutCategory,
+            ),
+            footer: _AddTaskButton(onAddTask: () => onAddTask(category.id)),
+            children: category.items
+                .map(
+                  (task) => DragAndDropItem(
+                    child: _CardBuilder(
+                      task: task,
+                      groupId: category.id,
+                      onEditTask: onEditTask,
+                    ),
+                  ),
+                )
+                .toList(),
           ),
-          headerBuilder: (_, columnData) => _HeaderWidget(
-            columnData: columnData,
-            processingGroupId: processingGroupId,
-            isProcessing: isProcessing,
-            onPopOutCategory: onPopOutCategory,
+        );
+
+        return DragAndDropLists(
+          horizontalAlignment: .center,
+          verticalAlignment: .center,
+          children: categoryList.toList(),
+          onItemReorder: onItemReorder,
+          onListReorder: onListReorder,
+          axis: .horizontal,
+          listWidth: columnWidth,
+          listDraggingWidth: columnWidth,
+          listPadding: const .symmetric(horizontal: 8),
+          itemDecorationWhileDragging: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          cardBuilder: (_, group, groupItem) {
-            final task = groupItem as KanbanTask;
-            return _CardBuilder(
-              key: ValueKey(task.id),
-              task: task,
-              groupId: group.id,
-              onEditTask: onEditTask,
-            );
-          },
-          footerBuilder: (_, columnData) =>
-              _AddTaskButton(onAddTask: () => onAddTask(columnData.id)),
         );
       },
     ),
@@ -64,7 +85,6 @@ class AutoResizingBoard extends StatelessWidget {
 
 class _CardBuilder extends StatelessWidget {
   const _CardBuilder({
-    super.key,
     required this.task,
     required this.groupId,
     required this.onEditTask,
@@ -75,30 +95,25 @@ class _CardBuilder extends StatelessWidget {
   final void Function(String groupId, KanbanTask task) onEditTask;
 
   @override
-  Widget build(BuildContext context) => Align(
-    alignment: .topCenter,
-    child: GestureDetector(
-      onDoubleTap: () => onEditTask(groupId, task),
-      child: AppFlowyGroupCard(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: .circular(8),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        margin: const .only(bottom: 12, left: 16, right: 16),
-        child: Padding(
-          padding: const .all(16.0),
-          child: SizedBox(
-            width: double.infinity,
-            child: Text(task.title, textAlign: .left),
+  Widget build(BuildContext context) => GestureDetector(
+    onDoubleTap: () => onEditTask(groupId, task),
+    child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: .circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
-        ),
+        ],
+      ),
+      margin: const .only(bottom: 12, left: 8, right: 8),
+      padding: const .all(16.0),
+      child: SizedBox(
+        width: double.infinity,
+        child: Text(task.title, textAlign: .left),
       ),
     ),
   );
@@ -110,23 +125,22 @@ class _AddTaskButton extends StatelessWidget {
   final VoidCallback onAddTask;
 
   @override
-  Widget build(BuildContext context) {
-    final mainContent = [
-      Icon(Icons.add, size: 20, color: Colors.black.withValues(alpha: 0.6)),
-      const SizedBox(width: 8),
-      Text(
-        'New Task',
-        style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
+  Widget build(BuildContext context) => InkWell(
+    onTap: onAddTask,
+    child: Padding(
+      padding: const .all(16.0),
+      child: Row(
+        children: [
+          Icon(Icons.add, size: 20, color: Colors.black.withValues(alpha: 0.6)),
+          const SizedBox(width: 8),
+          Text(
+            'New Task',
+            style: TextStyle(color: Colors.black.withValues(alpha: 0.6)),
+          ),
+        ],
       ),
-    ];
-    return InkWell(
-      onTap: onAddTask,
-      child: Padding(
-        padding: const .all(16.0),
-        child: Row(children: mainContent),
-      ),
-    );
-  }
+    ),
+  );
 }
 
 class _HeaderWidget extends StatelessWidget {
@@ -137,42 +151,53 @@ class _HeaderWidget extends StatelessWidget {
     required this.onPopOutCategory,
   });
 
-  final AppFlowyGroupData<dynamic> columnData;
+  final KanbanCategory columnData;
   final String? processingGroupId;
   final bool isProcessing;
-  final AsyncDynamicAppFlowyGroupFunc onPopOutCategory;
+  final Future<void> Function(KanbanCategory columnData) onPopOutCategory;
 
   @override
-  Widget build(BuildContext context) => AppFlowyGroupHeader(
-    icon: const Icon(Icons.circle, size: 12, color: Colors.blueAccent),
-    title: Text(
-      columnData.headerData.groupName,
-      style: const TextStyle(fontWeight: .w600),
-    ),
-    height: 50,
-    margin: const .symmetric(horizontal: 16),
-    addIcon: processingGroupId == columnData.id
-        ? const Padding(
-            padding: .all(8.0),
-            child: SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.grey,
-              ),
+  Widget build(BuildContext context) {
+    final loadingIndicator = const Padding(
+      padding: .all(8.0),
+      child: SizedBox(
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey),
+      ),
+    );
+
+    final toggleButton = IconButton(
+      onPressed: isProcessing ? null : () => onPopOutCategory(columnData),
+      icon: Icon(
+        Icons.open_in_new,
+        size: 18,
+        color: isProcessing ? Colors.grey.withValues(alpha: 0.4) : Colors.grey,
+      ),
+      tooltip: "Toggle sticky note",
+    );
+
+    return Container(
+      height: 50,
+      margin: const .symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.05),
+        borderRadius: const BorderRadius.vertical(top: .circular(8)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 16),
+          const Icon(Icons.circle, size: 12, color: Colors.blueAccent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              columnData.name,
+              style: const TextStyle(fontWeight: .w600),
             ),
-          )
-        : IconButton(
-            onPressed: isProcessing ? null : () => onPopOutCategory(columnData),
-            icon: Icon(
-              Icons.open_in_new,
-              size: 18,
-              color: isProcessing
-                  ? Colors.grey.withValues(alpha: 0.4)
-                  : Colors.grey,
-            ),
-            tooltip: "Toggle sticky note",
           ),
-  );
+          processingGroupId == columnData.id ? loadingIndicator : toggleButton,
+        ],
+      ),
+    );
+  }
 }

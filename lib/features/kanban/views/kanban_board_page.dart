@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:appflowy_board/appflowy_board.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 
@@ -16,16 +15,12 @@ class KanbanBoardPage extends StatefulWidget {
 }
 
 class _KanbanBoardPageState extends State<KanbanBoardPage> {
-  late AppFlowyBoardController controller;
   final syncChannel = const WindowMethodChannel('kanban_sync');
-
-  // Track which category IDs are currently popped out
   final Map<String, String> _activeCategoryWindows = {};
-
-  // Global lock to prevent concurrent engine spawning
   bool _isWindowProcessing = false;
-  // Tracks which specific category gets the loading spinner
   String? _processingGroupId;
+
+  List<KanbanCategory> categories = [];
 
   @override
   void initState() {
@@ -45,65 +40,97 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       return 'success';
     });
 
-    final todoGroup = AppFlowyGroupData(
-      id: 'todo',
-      name: 'To Do',
-      items: [KanbanTask('Design the "Twist"')],
-    );
-
-    final progressGroup = AppFlowyGroupData(
-      id: 'progress',
-      name: 'In Progress',
-      items: [KanbanTask('Finish Sticky Note Popup Feature')],
-    );
-
-    final doneGroup = AppFlowyGroupData(
-      id: 'done',
-      name: 'Done',
-      items: [
-        KanbanTask('Auto-resizing columns UI'),
-        KanbanTask('Setup Multi-Window'),
-      ],
-    );
-
-    controller = AppFlowyBoardController(
-      onMoveGroupItem: (groupId, fromIndex, toIndex) =>
-          _broadcastUpdate(groupId),
-      onMoveGroupItemToGroup: (fromGroupId, fromIndex, toGroupId, toIndex) {
-        _broadcastUpdate(fromGroupId);
-        _broadcastUpdate(toGroupId);
-      },
-    );
-
-    controller.addGroup(todoGroup);
-    controller.addGroup(progressGroup);
-    controller.addGroup(doneGroup);
+    categories = [
+      KanbanCategory(
+        id: 'todo',
+        name: 'To Do',
+        items: [
+          KanbanTask('Design the "Twist"'),
+          KanbanTask('Add Themes (Such as dark mode)'),
+          KanbanTask('Add minimum size to all components'),
+          KanbanTask('Editable Categories'),
+          KanbanTask('Improve Title Bar'),
+        ],
+      ),
+      KanbanCategory(
+        id: 'progress',
+        name: 'In Progress',
+        items: [
+          KanbanTask('Update Kanban Board Architecture'),
+          KanbanTask('Clean Up Code'),
+        ],
+      ),
+      KanbanCategory(
+        id: 'done',
+        name: 'Done',
+        items: [
+          KanbanTask('Kanban Board'),
+          KanbanTask('Setup Multi-Window'),
+          KanbanTask('Sticky Note Feature'),
+          KanbanTask(
+            'Fix animation for tasks being transferred (visual transition bug?)',
+          ),
+          KanbanTask(
+            'Make tasks inside sticky notes be swipeable (transfer feature)',
+          ),
+        ],
+      ),
+    ];
   }
 
-  // --- CRUD METHODS WITH DIALOGS ---
+  void _onItemReorder(
+    int oldItemIndex,
+    int oldListIndex,
+    int newItemIndex,
+    int newListIndex,
+  ) {
+    setState(() {
+      final movedTask = categories[oldListIndex].items.removeAt(oldItemIndex);
+      categories[newListIndex].items.insert(newItemIndex, movedTask);
+    });
+
+    _broadcastUpdate(categories[oldListIndex].id);
+    if (oldListIndex != newListIndex) {
+      _broadcastUpdate(categories[newListIndex].id);
+    }
+  }
+
+  void _onListReorder(int oldListIndex, int newListIndex) {
+    setState(() {
+      final movedList = categories.removeAt(oldListIndex);
+      categories.insert(newListIndex, movedList);
+    });
+  }
 
   void _promptAddCategory() {
     _showInputDialog('New Category', (input) {
       final newGroupId = input.toLowerCase().replaceAll(' ', '_');
-      controller.addGroup(
-        AppFlowyGroupData(id: newGroupId, name: input, items: []),
-      );
-      setState(() {});
+      setState(() {
+        categories.add(KanbanCategory(id: newGroupId, name: input, items: []));
+      });
     });
   }
 
   void _promptAddTask(String groupId) {
     _showInputDialog('New Task', (input) {
-      controller.addGroupItem(groupId, KanbanTask(input));
+      final group = categories.firstWhere((g) => g.id == groupId);
+      setState(() {
+        group.items.add(KanbanTask(input));
+      });
       _broadcastUpdate(groupId);
     });
   }
 
   void _promptEditTask(String groupId, KanbanTask oldTask) {
     _showInputDialog('Edit Task', (input) {
-      controller.removeGroupItem(groupId, oldTask.id);
-      controller.addGroupItem(groupId, KanbanTask(input));
-      _broadcastUpdate(groupId);
+      final group = categories.firstWhere((g) => g.id == groupId);
+      final index = group.items.indexWhere((t) => t.id == oldTask.id);
+      if (index != -1) {
+        setState(() {
+          group.items[index] = KanbanTask(input);
+        });
+        _broadcastUpdate(groupId);
+      }
     }, initialText: oldTask.title);
   }
 
@@ -141,57 +168,47 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     );
   }
 
-  // --- LOGIC METHODS ---
-
   void _advanceTaskDirectionally(
     String categoryName,
     String taskTitle,
     int direction,
   ) {
-    final groupIndex = controller.groupDatas.indexWhere(
-      (g) => g.headerData.groupName == categoryName,
-    );
+    final groupIndex = categories.indexWhere((g) => g.name == categoryName);
     if (groupIndex == -1) return;
 
     final targetIndex = groupIndex + direction;
-    if (targetIndex < 0 || targetIndex >= controller.groupDatas.length) return;
+    if (targetIndex < 0 || targetIndex >= categories.length) return;
 
-    final currentGroup = controller.groupDatas[groupIndex];
-    final targetGroup = controller.groupDatas[targetIndex];
+    final currentGroup = categories[groupIndex];
+    final targetGroup = categories[targetIndex];
 
-    try {
-      final taskItem = currentGroup.items.cast<KanbanTask>().firstWhere(
-        (t) => t.title == taskTitle,
-      );
-      controller.removeGroupItem(currentGroup.id, taskItem.id);
-      controller.addGroupItem(targetGroup.id, taskItem);
-
+    final taskIndex = currentGroup.items.indexWhere(
+      (t) => t.title == taskTitle,
+    );
+    if (taskIndex != -1) {
+      setState(() {
+        final taskItem = currentGroup.items.removeAt(taskIndex);
+        targetGroup.items.add(taskItem);
+      });
       _broadcastUpdate(currentGroup.id);
       _broadcastUpdate(targetGroup.id);
-    } catch (e) {
-      debugPrint('Task not found.');
     }
   }
 
   void _deleteTask(String categoryName, String taskTitle) {
-    final group = controller.groupDatas.firstWhere(
-      (g) => g.headerData.groupName == categoryName,
-    );
-    try {
-      final taskItem = group.items.cast<KanbanTask>().firstWhere(
-        (t) => t.title == taskTitle,
-      );
-      controller.removeGroupItem(group.id, taskItem.id);
-      _broadcastUpdate(group.id);
-    } catch (_) {}
+    final group = categories.firstWhere((g) => g.name == categoryName);
+    setState(() {
+      group.items.removeWhere((t) => t.title == taskTitle);
+    });
+    _broadcastUpdate(group.id);
   }
 
-  Future<void> _handlePopOutCategory(AppFlowyGroupData columnData) async {
+  Future<void> _handlePopOutCategory(KanbanCategory columnData) async {
     if (_isWindowProcessing) return;
 
     final groupId = columnData.id;
-    final groupIndex = controller.groupDatas.indexWhere((g) => g.id == groupId);
-    final group = controller.groupDatas[groupIndex];
+    final groupIndex = categories.indexWhere((g) => g.id == groupId);
+    final group = categories[groupIndex];
 
     setState(() {
       _isWindowProcessing = true;
@@ -199,7 +216,6 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     });
 
     try {
-      // If it's already open, command the sub-window to close itself
       if (_activeCategoryWindows.containsKey(groupId)) {
         final windowIdStr = _activeCategoryWindows[groupId]!;
         final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
@@ -216,12 +232,11 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
         if (closeSuccess) return;
       }
 
-      // Otherwise, spawn the new window
       final payload = jsonEncode({
-        'title': group.headerData.groupName,
-        'items': group.items.map((item) => (item as KanbanTask).title).toList(),
+        'title': group.name,
+        'items': group.items.map((item) => item.title).toList(),
         'isFirst': groupIndex == 0,
-        'isLast': groupIndex == controller.groupDatas.length - 1,
+        'isLast': groupIndex == categories.length - 1,
       });
 
       final window = await WindowController.create(
@@ -231,7 +246,6 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       final windowId = window.windowId;
       _activeCategoryWindows[groupId] = windowId.toString();
 
-      // Create the dedicated pipe to listen for checkouts from this new window
       final uniqueChannel = WindowMethodChannel('kanban_sync_$windowId');
       uniqueChannel.setMethodCallHandler((call) async {
         final payload = call.arguments as Map?;
@@ -258,17 +272,17 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   }
 
   void _broadcastUpdate(String groupId) async {
-    final groupIndex = controller.groupDatas.indexWhere((g) => g.id == groupId);
-    final group = controller.groupDatas[groupIndex];
+    final groupIndex = categories.indexWhere((g) => g.id == groupId);
+    if (groupIndex == -1) return;
+    final group = categories[groupIndex];
 
     final payload = {
-      'title': group.headerData.groupName,
-      'items': group.items.map((item) => (item as KanbanTask).title).toList(),
+      'title': group.name,
+      'items': group.items.map((item) => item.title).toList(),
       'isFirst': groupIndex == 0,
-      'isLast': groupIndex == controller.groupDatas.length - 1,
+      'isLast': groupIndex == categories.length - 1,
     };
 
-    // Broadcast the update to ALL active unique channels
     for (final windowIdStr in _activeCategoryWindows.values) {
       try {
         final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
@@ -283,10 +297,13 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.white,
     body: Column(
+      mainAxisAlignment: .center,
       children: [
         CustomTitleBar(onAddCategory: _promptAddCategory),
         AutoResizingBoard(
-          controller: controller,
+          categories: categories,
+          onItemReorder: _onItemReorder,
+          onListReorder: _onListReorder,
           onPopOutCategory: _handlePopOutCategory,
           onAddTask: _promptAddTask,
           onEditTask: _promptEditTask,
@@ -309,7 +326,7 @@ class CustomTitleBar extends StatelessWidget {
       height: 40,
       width: double.infinity,
       color: Colors.grey.withValues(alpha: 0.1),
-      alignment: .centerLeft,
+      alignment: Alignment.centerLeft,
       padding: const .symmetric(horizontal: 16),
       child: Row(
         mainAxisAlignment: .spaceBetween,
