@@ -1,31 +1,56 @@
 import 'package:flutter/material.dart';
+import 'package:seban_board/components/seed_color_selector.dart';
 import 'package:window_manager/window_manager.dart';
 
 class CustomTitleBar extends StatelessWidget {
   final VoidCallback onAddCategory;
+  final ThemeMode currentMode;
+  final Color currentColor;
+  final ValueChanged<ThemeMode> onModeChanged;
+  final ValueChanged<Color> onColorChanged;
 
-  const CustomTitleBar({super.key, required this.onAddCategory});
+  const CustomTitleBar({
+    super.key,
+    required this.onAddCategory,
+    required this.currentMode,
+    required this.currentColor,
+    required this.onModeChanged,
+    required this.onColorChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     final addCategoryButton = IconButton(
       onPressed: onAddCategory,
-      icon: const Icon(Icons.add_box, size: 18, color: Colors.black54),
+      icon: Icon(
+        Icons.add_box,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
       tooltip: "Add Category",
-      padding: .zero,
+      padding: const .symmetric(horizontal: 8),
       constraints: const BoxConstraints(),
     );
 
-    final verticalDivider = Container(
-      width: 1,
-      height: 16,
-      color: Colors.black.withValues(alpha: 0.2),
+    final divider = Padding(
+      padding: const .symmetric(horizontal: 8),
+      child: Container(
+        width: 1,
+        height: 16,
+        color: theme.colorScheme.outlineVariant,
+      ),
     );
 
     final minimizeButton = IconButton(
       onPressed: () async => await windowManager.minimize(),
-      icon: const Icon(Icons.minimize, size: 18, color: Colors.black54),
-      padding: .zero,
+      icon: Icon(
+        Icons.minimize,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      padding: const .symmetric(horizontal: 8),
       constraints: const BoxConstraints(),
     );
 
@@ -37,16 +62,29 @@ class CustomTitleBar extends StatelessWidget {
           await windowManager.maximize();
         }
       },
-      icon: const Icon(Icons.crop_square, size: 18, color: Colors.black54),
-      padding: .zero,
+      icon: Icon(
+        Icons.crop_square,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      padding: const .symmetric(horizontal: 8),
       constraints: const BoxConstraints(),
     );
 
     final closeButton = IconButton(
       onPressed: () async => await windowManager.close(),
-      icon: const Icon(Icons.close, size: 18, color: Colors.black54),
-      padding: .zero,
+      icon: Icon(
+        Icons.close,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      padding: const .symmetric(horizontal: 8),
       constraints: const BoxConstraints(),
+    );
+
+    final titleText = Text(
+      'Seban Board',
+      style: TextStyle(fontWeight: .bold, color: theme.colorScheme.onSurface),
     );
 
     return DragToMoveArea(
@@ -59,21 +97,25 @@ class CustomTitleBar extends StatelessWidget {
         child: Row(
           mainAxisAlignment: .spaceBetween,
           children: [
-            const Text(
-              'Seban Board',
-              style: TextStyle(fontWeight: .bold, color: Colors.black87),
-            ),
+            titleText,
             Row(
-              mainAxisSize: .min,
+              // mainAxisSize: .min,
               children: [
+                ThemeModeSelector(
+                  currentMode: currentMode,
+                  theme: theme,
+                  onModeChanged: onModeChanged,
+                ),
+                SeedColorSelector(
+                  currentColor: currentColor,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  onColorChanged: onColorChanged,
+                ),
+                divider,
                 addCategoryButton,
-                const SizedBox(width: 12),
-                verticalDivider,
-                const SizedBox(width: 12),
+                divider,
                 minimizeButton,
-                const SizedBox(width: 12),
                 maximizeButton,
-                const SizedBox(width: 12),
                 closeButton,
               ],
             ),
@@ -82,4 +124,56 @@ class CustomTitleBar extends StatelessWidget {
       ),
     );
   }
+}
+
+class ThemeModeSelector extends StatelessWidget {
+  const ThemeModeSelector({
+    super.key,
+    required this.currentMode,
+    required this.theme,
+    required this.onModeChanged,
+  });
+
+  final ThemeMode currentMode;
+  final ThemeData theme;
+  final ValueChanged<ThemeMode> onModeChanged;
+
+  @override
+  Widget build(BuildContext context) => DropdownButton<ThemeMode>(
+    value: currentMode,
+    underline: const SizedBox(),
+    padding: const .symmetric(horizontal: 4),
+    icon: Padding(
+      padding: const .only(left: 4),
+      child: Icon(
+        Icons.brightness_medium,
+        size: 16,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    ),
+    onChanged: (val) => onModeChanged(val!),
+    items: [
+      DropdownMenuItem(
+        value: .system,
+        child: Text(
+          'System',
+          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+        ),
+      ),
+      DropdownMenuItem(
+        value: .light,
+        child: Text(
+          'Light',
+          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+        ),
+      ),
+      DropdownMenuItem(
+        value: .dark,
+        child: Text(
+          'Dark',
+          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+        ),
+      ),
+    ],
+  );
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:seban_board/components/seed_color_selector.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 
@@ -18,6 +19,8 @@ class _StickyNotePageState extends State<StickyNotePage> {
   late List<String> items;
   late bool isFirst;
   late bool isLast;
+  late ThemeMode themeMode;
+  late Color localSeedColor;
 
   @override
   void initState() {
@@ -28,8 +31,9 @@ class _StickyNotePageState extends State<StickyNotePage> {
     isFirst = widget.data['isFirst'] ?? false;
     isLast = widget.data['isLast'] ?? false;
 
-    final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
+    _applyThemeFromPayload(widget.data);
 
+    final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
     uniqueChannel.setMethodCallHandler((call) async {
       if (call.method == 'close_window') {
         Future.delayed(const Duration(milliseconds: 50), () async {
@@ -43,10 +47,39 @@ class _StickyNotePageState extends State<StickyNotePage> {
           items = List<String>.from(payload['items']);
           isFirst = payload['isFirst'] ?? false;
           isLast = payload['isLast'] ?? false;
+
+          final updatedModeStr = payload['themeMode'] ?? 'system';
+          themeMode = ThemeMode.values.firstWhere(
+            (e) => e.name == updatedModeStr,
+            orElse: () => .system,
+          );
         });
       }
       return 'success';
     });
+  }
+
+  void _applyThemeFromPayload(Map data) {
+    final modeStr = data['themeMode'] ?? 'system';
+    themeMode = ThemeMode.values.firstWhere(
+      (e) => e.name == modeStr,
+      orElse: () => .system,
+    );
+
+    final int incomingColorInt = data['seedColor'] ?? Colors.blue.toARGB32();
+
+    const colorList = [
+      Colors.blue,
+      Colors.red,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+    ];
+
+    localSeedColor = colorList.firstWhere(
+      (c) => c.toARGB32() == incomingColorInt,
+      orElse: () => Colors.blue,
+    );
   }
 
   void _promptEditCategory() {
@@ -115,18 +148,37 @@ class _StickyNotePageState extends State<StickyNotePage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.transparent,
-    body: StickyNoteWidget(
-      title: title,
-      items: items,
-      windowId: widget.windowId,
-      isFirst: isFirst,
-      isLast: isLast,
-      onEditCategory: _promptEditCategory,
-      onDeleteCategory: _promptDeleteCategory,
-    ),
-  );
+  Widget build(BuildContext context) {
+    final Brightness brightness = themeMode == .system
+        ? MediaQuery.platformBrightnessOf(context)
+        : (themeMode == .dark ? .dark : .light);
+
+    final theme = ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: localSeedColor,
+        brightness: brightness,
+      ),
+      useMaterial3: true,
+    );
+
+    return AnimatedTheme(
+      data: theme,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: StickyNoteWidget(
+          title: title,
+          items: items,
+          windowId: widget.windowId,
+          isFirst: isFirst,
+          isLast: isLast,
+          currentColor: localSeedColor,
+          onEditCategory: _promptEditCategory,
+          onDeleteCategory: _promptDeleteCategory,
+          onColorChanged: (color) => setState(() => localSeedColor = color),
+        ),
+      ),
+    );
+  }
 }
 
 class StickyNoteWidget extends StatelessWidget {
@@ -137,8 +189,10 @@ class StickyNoteWidget extends StatelessWidget {
     required this.windowId,
     required this.isFirst,
     required this.isLast,
+    required this.currentColor,
     required this.onEditCategory,
     required this.onDeleteCategory,
+    required this.onColorChanged,
   });
 
   final String title;
@@ -146,40 +200,47 @@ class StickyNoteWidget extends StatelessWidget {
   final String windowId;
   final bool isFirst;
   final bool isLast;
+  final Color currentColor;
   final VoidCallback onEditCategory;
   final VoidCallback onDeleteCategory;
+  final ValueChanged<Color> onColorChanged;
 
   @override
-  Widget build(BuildContext context) => Container(
-    decoration: BoxDecoration(
-      color: Colors.amberAccent.withValues(alpha: 0.85),
-      borderRadius: .circular(12),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.15),
-          blurRadius: 10,
-          offset: const Offset(2, 4),
-        ),
-      ],
-    ),
-    child: Column(
-      crossAxisAlignment: .stretch,
-      children: [
-        _DraggableStickyNoteTitleBar(
-          title: title,
-          onEditCategory: onEditCategory,
-          onDeleteCategory: onDeleteCategory,
-        ),
-        _StickyNoteWidgetContent(
-          title: title,
-          items: items,
-          windowId: windowId,
-          isFirst: isFirst,
-          isLast: isLast,
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.85),
+        borderRadius: .circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 10,
+            offset: const Offset(2, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: .stretch,
+        children: [
+          _DraggableStickyNoteTitleBar(
+            title: title,
+            currentColor: currentColor,
+            onEditCategory: onEditCategory,
+            onDeleteCategory: onDeleteCategory,
+            onColorChanged: onColorChanged,
+          ),
+          _StickyNoteWidgetContent(
+            title: title,
+            items: items,
+            windowId: windowId,
+            isFirst: isFirst,
+            isLast: isLast,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StickyNoteWidgetContent extends StatefulWidget {
@@ -204,71 +265,64 @@ class _StickyNoteWidgetContent extends StatefulWidget {
 
 class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
   @override
-  Widget build(BuildContext context) => Expanded(
-    child: ListView.builder(
-      padding: const .all(12),
-      itemCount: widget.items.length,
-      itemBuilder: (context, index) {
-        final task = widget.items[index];
-        return Dismissible(
-          key: ValueKey(task),
-          direction: .horizontal,
-          background: _buildSwipeBackground(
-            color: widget.isLast ? Colors.redAccent : Colors.green,
-            icon: widget.isLast ? Icons.delete : Icons.arrow_forward,
-            alignment: .centerLeft,
-            padding: const .only(left: 16),
-          ),
-          secondaryBackground: _buildSwipeBackground(
-            color: widget.isFirst ? Colors.redAccent : Colors.blue,
-            icon: widget.isFirst ? Icons.delete : Icons.arrow_back,
-            alignment: .centerRight,
-            padding: const .only(right: 16),
-          ),
-          confirmDismiss: (direction) async {
-            if (direction == DismissDirection.startToEnd) {
-              if (widget.isLast) return await _promptDelete(context, task);
-              _invokeTaskAction(task, 'move_next');
-              return true;
-            } else {
-              if (widget.isFirst) return await _promptDelete(context, task);
-              _invokeTaskAction(task, 'move_prev');
-              return true;
-            }
-          },
-          onDismissed: (direction) {
-            setState(() => widget.items.removeAt(index));
-          },
-          child: Padding(
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: ListView.builder(
+        padding: const .all(12),
+        itemCount: widget.items.length,
+        itemBuilder: (context, index) {
+          final task = widget.items[index];
+          final paddedText = Padding(
             padding: const .symmetric(vertical: 12.0, horizontal: 4.0),
             child: SizedBox(
               width: double.infinity,
               child: Text(
                 task,
-                style: const TextStyle(
-                  color: Colors.black87,
+                style: TextStyle(
+                  color: colorScheme.onPrimaryContainer,
                   fontSize: 14,
                   height: 1.3,
                 ),
               ),
             ),
-          ),
-        );
-      },
-    ),
-  );
+          );
 
-  Widget _buildSwipeBackground({
-    required Color color,
-    required IconData icon,
-    required Alignment alignment,
-    required EdgeInsets padding,
-  }) => Container(
-    alignment: alignment,
-    padding: padding,
-    color: color,
-    child: Icon(icon, color: Colors.white, size: 20),
-  );
+          return Dismissible(
+            key: ValueKey(task),
+            direction: .horizontal,
+            background: _SwipeBackground(
+              color: widget.isLast ? Colors.redAccent : Colors.green,
+              icon: widget.isLast ? Icons.delete : Icons.arrow_forward,
+              alignment: .centerLeft,
+              padding: const .only(left: 16),
+            ),
+            secondaryBackground: _SwipeBackground(
+              color: widget.isFirst ? Colors.redAccent : Colors.blue,
+              icon: widget.isFirst ? Icons.delete : Icons.arrow_back,
+              alignment: .centerRight,
+              padding: const .only(right: 16),
+            ),
+            confirmDismiss: (direction) async {
+              if (direction == DismissDirection.startToEnd) {
+                if (widget.isLast) return await _promptDelete(context, task);
+                _invokeTaskAction(task, 'move_next');
+                return true;
+              } else {
+                if (widget.isFirst) return await _promptDelete(context, task);
+                _invokeTaskAction(task, 'move_prev');
+                return true;
+              }
+            },
+            onDismissed: (direction) {
+              setState(() => widget.items.removeAt(index));
+            },
+            child: paddedText,
+          );
+        },
+      ),
+    );
+  }
 
   void _invokeTaskAction(String task, String action) {
     final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
@@ -278,58 +332,97 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
     });
   }
 
-  Future<bool?> _promptDelete(BuildContext context, String task) async =>
-      showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Delete Task?'),
-          content: const Text(
-            'This task is at the end of the board. Do you want to delete it?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                _invokeTaskAction(task, 'delete_task');
-                Navigator.pop(context, true);
-              },
-              child: const Text('Delete', style: TextStyle(color: Colors.red)),
-            ),
-          ],
+  Future<bool?> _promptDelete(BuildContext context, String task) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Task?'),
+        content: const Text(
+          'This task is at the end of the board. Do you want to delete it?',
         ),
-      );
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              _invokeTaskAction(task, 'delete_task');
+              Navigator.pop(context, true);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SwipeBackground extends StatelessWidget {
+  const _SwipeBackground({
+    required this.color,
+    required this.icon,
+    required this.alignment,
+    required this.padding,
+  });
+
+  final Color color;
+  final IconData icon;
+  final Alignment alignment;
+  final EdgeInsets padding;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    alignment: alignment,
+    padding: padding,
+    color: color,
+    child: Icon(icon, color: Colors.white, size: 20),
+  );
 }
 
 class _DraggableStickyNoteTitleBar extends StatelessWidget {
   const _DraggableStickyNoteTitleBar({
     required this.title,
+    required this.currentColor,
     required this.onEditCategory,
     required this.onDeleteCategory,
+    required this.onColorChanged,
   });
 
   final String title;
+  final Color currentColor;
   final VoidCallback onEditCategory;
   final VoidCallback onDeleteCategory;
+  final ValueChanged<Color> onColorChanged;
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     final titleText = Expanded(
       child: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontWeight: .bold,
           fontSize: 16,
-          color: Colors.black87,
+          color: colorScheme.onPrimaryContainer,
         ),
         overflow: .ellipsis,
       ),
     );
 
+    final colorSelector = SeedColorSelector(
+      currentColor: currentColor,
+      color: colorScheme.onPrimaryContainer,
+      onColorChanged: onColorChanged,
+    );
+
     final contextMenuButton = PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, size: 18, color: Colors.black54),
+      icon: Icon(
+        Icons.more_vert,
+        size: 18,
+        color: colorScheme.onPrimaryContainer,
+      ),
       tooltip: "Category Options",
       onSelected: (value) {
         if (value == 'edit') onEditCategory();
@@ -342,11 +435,13 @@ class _DraggableStickyNoteTitleBar extends StatelessWidget {
           child: Text('Delete Category', style: TextStyle(color: Colors.red)),
         ),
       ],
+      constraints: const BoxConstraints(),
     );
 
     final closeButton = IconButton(
-      icon: const Icon(Icons.close, size: 18, color: Colors.black54),
+      icon: Icon(Icons.close, size: 18, color: colorScheme.onPrimaryContainer),
       onPressed: () async => await windowManager.close(),
+      constraints: const BoxConstraints(),
     );
 
     return DragToMoveArea(
@@ -354,7 +449,9 @@ class _DraggableStickyNoteTitleBar extends StatelessWidget {
         padding: const .only(left: 12, right: 4, top: 8, bottom: 8),
         decoration: BoxDecoration(
           border: Border(
-            bottom: BorderSide(color: Colors.black.withValues(alpha: 0.05)),
+            bottom: BorderSide(
+              color: colorScheme.onPrimaryContainer.withValues(alpha: 0.1),
+            ),
           ),
         ),
         child: Row(
@@ -364,6 +461,7 @@ class _DraggableStickyNoteTitleBar extends StatelessWidget {
             Row(
               mainAxisSize: .min,
               children: [
+                colorSelector,
                 contextMenuButton,
                 closeButton,
                 const SizedBox(width: 8),

@@ -17,18 +17,17 @@ class KanbanBoardPage extends StatefulWidget {
 class _KanbanBoardPageState extends State<KanbanBoardPage> {
   final syncChannel = const WindowMethodChannel('kanban_sync');
   final Map<String, String> _activeCategoryWindows = {};
+
   bool _isWindowProcessing = false;
   String? _processingGroupId;
-
-  List<KanbanCategory> categories = [];
 
   double _columnWidth = 320.0;
   final double _minColumnWidth = 280.0;
 
-  /// Clamps the width so it can never crush the UI or expand infinitely
-  void _handleColumnResize(double delta) => setState(() {
-    _columnWidth = (_columnWidth + delta).clamp(_minColumnWidth, 800.0);
-  });
+  ThemeMode _themeMode = .system;
+  Color _seedColor = Colors.blue;
+
+  List<KanbanCategory> categories = [];
 
   @override
   void initState() {
@@ -86,6 +85,29 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     ];
   }
 
+  /// Clamps the width so it can never crush the UI or expand infinitely
+  void _handleColumnResize(double delta) => setState(() {
+    _columnWidth = (_columnWidth + delta).clamp(_minColumnWidth, 800.0);
+  });
+
+  // --- Theme Updaters ---
+  void _updateThemeMode(ThemeMode mode) {
+    setState(() => _themeMode = mode);
+    _broadcastAllUpdates(); // Sync to sticky notes
+  }
+
+  void _updateSeedColor(Color color) {
+    setState(() => _seedColor = color);
+    _broadcastAllUpdates(); // Sync to sticky notes
+  }
+
+  void _broadcastAllUpdates() {
+    for (KanbanCategory group in categories) {
+      _broadcastUpdate(group.id);
+    }
+  }
+
+  // --- Kanban Logic Methods ---
   void _onItemReorder(
     int oldItemIndex,
     int oldListIndex,
@@ -354,6 +376,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
         'items': group.items.map((item) => item.title).toList(),
         'isFirst': groupIndex == 0,
         'isLast': groupIndex == categories.length - 1,
+        'themeMode': _themeMode.name,
+        'seedColor': _seedColor.toARGB32(),
       });
 
       final window = await WindowController.create(
@@ -403,6 +427,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       'items': group.items.map((item) => item.title).toList(),
       'isFirst': groupIndex == 0,
       'isLast': groupIndex == categories.length - 1,
+      'themeMode': _themeMode.name,
+      'seedColor': _seedColor.toARGB32(),
     };
 
     // ONLY send the update to this specific category's window
@@ -418,28 +444,51 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.white,
-    body: Column(
-      mainAxisAlignment: .center,
-      children: [
-        CustomTitleBar(onAddCategory: _promptAddCategory),
-        AutoResizingBoard(
-          categories: categories,
-          columnWidth: _columnWidth,
-          onColumnResize: _handleColumnResize,
-          onItemReorder: _onItemReorder,
-          onListReorder: _onListReorder,
-          onPopOutCategory: _handlePopOutCategory,
-          onAddTask: _promptAddTask,
-          onEditTask: _promptEditTask,
-          onDeleteTask: _promptDeleteTask,
-          onEditCategory: _promptEditCategory,
-          onDeleteCategory: _promptDeleteCategory,
-          isProcessing: _isWindowProcessing,
-          processingGroupId: _processingGroupId,
+  Widget build(BuildContext context) {
+    final Brightness brightness = _themeMode == .system
+        ? MediaQuery.platformBrightnessOf(context)
+        : (_themeMode == .dark ? .dark : .light);
+
+    final theme = ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _seedColor,
+        brightness: brightness,
+      ),
+      useMaterial3: true,
+    );
+
+    return AnimatedTheme(
+      data: theme,
+      child: Scaffold(
+        backgroundColor: theme.colorScheme.surface,
+        body: Column(
+          mainAxisAlignment: .center,
+          children: [
+            CustomTitleBar(
+              onAddCategory: _promptAddCategory,
+              currentMode: _themeMode,
+              currentColor: _seedColor,
+              onModeChanged: _updateThemeMode,
+              onColorChanged: _updateSeedColor,
+            ),
+            AutoResizingBoard(
+              categories: categories,
+              columnWidth: _columnWidth,
+              onColumnResize: _handleColumnResize,
+              onItemReorder: _onItemReorder,
+              onListReorder: _onListReorder,
+              onPopOutCategory: _handlePopOutCategory,
+              onAddTask: _promptAddTask,
+              onEditTask: _promptEditTask,
+              onDeleteTask: _promptDeleteTask,
+              onEditCategory: _promptEditCategory,
+              onDeleteCategory: _promptDeleteCategory,
+              isProcessing: _isWindowProcessing,
+              processingGroupId: _processingGroupId,
+            ),
+          ],
         ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
