@@ -15,32 +15,32 @@ class StickyNotePage extends StatefulWidget {
 class _StickyNotePageState extends State<StickyNotePage> {
   late String title;
   late List<String> items;
+  late bool isFirst;
+  late bool isLast;
 
   @override
   void initState() {
     super.initState();
-    // Initialize state with the arguments passed during creation
     title = widget.data['title'] ?? "Notes";
     items = List<String>.from(widget.data['items'] ?? []);
+    isFirst = widget.data['isFirst'] ?? false;
+    isLast = widget.data['isLast'] ?? false;
 
-    // Bind to the unique channel for this specific window
     final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
 
     uniqueChannel.setMethodCallHandler((call) async {
-      // Handle the assassination order
       if (call.method == 'close_window') {
         Future.delayed(const Duration(milliseconds: 50), () async {
           await windowManager.close();
         });
         return 'success';
-      }
-      // Handle standard task updates
-      else if (call.method == 'update_category' && call.arguments != null) {
+      } else if (call.method == 'update_category' && call.arguments != null) {
         final payload = call.arguments as Map;
-        // Check if it's meant for this category just in case
         if (payload['title'] == title) {
           setState(() {
             items = List<String>.from(payload['items']);
+            isFirst = payload['isFirst'] ?? false;
+            isLast = payload['isLast'] ?? false;
           });
         }
       }
@@ -57,6 +57,8 @@ class _StickyNotePageState extends State<StickyNotePage> {
         title: title,
         items: items,
         windowId: widget.windowId,
+        isFirst: isFirst,
+        isLast: isLast,
       ),
     ),
   );
@@ -68,11 +70,15 @@ class StickyNoteWidget extends StatelessWidget {
     required this.title,
     required this.items,
     required this.windowId,
+    required this.isFirst,
+    required this.isLast,
   });
 
   final String title;
   final List<String> items;
   final String windowId;
+  final bool isFirst;
+  final bool isLast;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -95,66 +101,134 @@ class StickyNoteWidget extends StatelessWidget {
           title: title,
           items: items,
           windowId: windowId,
+          isFirst: isFirst,
+          isLast: isLast,
         ),
       ],
     ),
   );
 }
 
-class _StickyNoteWidgetContent extends StatelessWidget {
+class _StickyNoteWidgetContent extends StatefulWidget {
   const _StickyNoteWidgetContent({
     required this.title,
     required this.items,
     required this.windowId,
+    required this.isFirst,
+    required this.isLast,
   });
 
   final String title;
   final List<String> items;
   final String windowId;
+  final bool isFirst;
+  final bool isLast;
 
+  @override
+  State<_StickyNoteWidgetContent> createState() =>
+      _StickyNoteWidgetContentState();
+}
+
+class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
   @override
   Widget build(BuildContext context) => Expanded(
     child: ListView.builder(
       padding: const .all(12),
-      itemCount: items.length,
-      itemBuilder: (context, index) => Padding(
-        padding: const .symmetric(vertical: 6.0),
-        child: Row(
-          mainAxisAlignment: .center,
-          crossAxisAlignment: .start,
-          children: [
-            IconButton(
-              onPressed: () => _checkOutTask(index),
-              icon: Icon(
-                Icons.open_in_new,
-                size: 20,
-                color: Colors.black.withValues(alpha: .6),
+      itemCount: widget.items.length,
+      itemBuilder: (context, index) {
+        final task = widget.items[index];
+        return Dismissible(
+          key: ValueKey(task),
+          direction: .horizontal,
+          background: _buildSwipeBackground(
+            color: widget.isLast ? Colors.redAccent : Colors.green,
+            icon: widget.isLast ? Icons.delete : Icons.arrow_forward,
+            alignment: .centerLeft,
+            padding: const .only(left: 16),
+          ),
+          secondaryBackground: _buildSwipeBackground(
+            color: widget.isFirst ? Colors.redAccent : Colors.blue,
+            icon: widget.isFirst ? Icons.delete : Icons.arrow_back,
+            alignment: Alignment.centerRight,
+            padding: const .only(right: 16),
+          ),
+          confirmDismiss: (direction) async {
+            if (direction == DismissDirection.startToEnd) {
+              if (widget.isLast) return await _promptDelete(context, task);
+              _invokeTaskAction(task, 'move_next');
+              return true;
+            } else {
+              if (widget.isFirst) return await _promptDelete(context, task);
+              _invokeTaskAction(task, 'move_prev');
+              return true;
+            }
+          },
+          onDismissed: (direction) {
+            // Remove locally first
+            setState(() => widget.items.removeAt(index));
+          },
+          child: Padding(
+            padding: const .symmetric(vertical: 12.0, horizontal: 4.0),
+            child: SizedBox(
+              width: double.infinity,
+              child: Text(
+                task,
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 14,
+                  height: 1.3,
+                ),
               ),
-              alignment: .topStart,
-              tooltip: 'Move to next category',
             ),
-            const SizedBox(width: 8),
-            Text(
-              items[index],
-              style: const TextStyle(
-                color: Colors.black87,
-                fontSize: 14,
-                height: 1.3,
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     ),
   );
 
-  void _checkOutTask(int index) {
-    final uniqueChannel = WindowMethodChannel('kanban_sync_$windowId');
-    uniqueChannel.invokeMethod('check_out_task', {
-      'category': title,
-      'task': items[index],
+  Widget _buildSwipeBackground({
+    required Color color,
+    required IconData icon,
+    required Alignment alignment,
+    required EdgeInsets padding,
+  }) => Container(
+    alignment: alignment,
+    padding: padding,
+    color: color,
+    child: Icon(icon, color: Colors.white, size: 20),
+  );
+
+  void _invokeTaskAction(String task, String action) {
+    final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
+    uniqueChannel.invokeMethod(action, {
+      'category': widget.title,
+      'task': task,
     });
   }
+
+  Future<bool?> _promptDelete(BuildContext context, String task) async =>
+      showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Delete Task?'),
+          content: const Text(
+            'This task is at the end of the board. Do you want to delete it?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                _invokeTaskAction(task, 'delete_task');
+                Navigator.pop(context, true);
+              },
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
+      );
 }
 
 class _DraggableStickyNoteTitleBar extends StatelessWidget {
@@ -177,7 +251,7 @@ class _DraggableStickyNoteTitleBar extends StatelessWidget {
           Text(
             title,
             style: const TextStyle(
-              fontWeight: .bold,
+              fontWeight: FontWeight.bold,
               fontSize: 16,
               color: Colors.black87,
             ),

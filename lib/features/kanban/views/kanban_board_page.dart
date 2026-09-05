@@ -32,9 +32,15 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     super.initState();
 
     syncChannel.setMethodCallHandler((call) async {
-      if (call.method == 'check_out_task' && call.arguments != null) {
-        final payload = call.arguments as Map;
-        _advanceTaskToNextCategory(payload['category'], payload['task']);
+      final payload = call.arguments as Map?;
+      if (payload == null) return 'error';
+
+      if (call.method == 'move_next') {
+        _advanceTaskDirectionally(payload['category'], payload['task'], 1);
+      } else if (call.method == 'move_prev') {
+        _advanceTaskDirectionally(payload['category'], payload['task'], -1);
+      } else if (call.method == 'delete_task') {
+        _deleteTask(payload['category'], payload['task']);
       }
       return 'success';
     });
@@ -137,35 +143,55 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
 
   // --- LOGIC METHODS ---
 
-  void _advanceTaskToNextCategory(String categoryName, String taskTitle) {
+  void _advanceTaskDirectionally(
+    String categoryName,
+    String taskTitle,
+    int direction,
+  ) {
     final groupIndex = controller.groupDatas.indexWhere(
       (g) => g.headerData.groupName == categoryName,
     );
-    if (groupIndex == -1 || groupIndex >= controller.groupDatas.length - 1) {
-      return;
-    }
+    if (groupIndex == -1) return;
+
+    final targetIndex = groupIndex + direction;
+    if (targetIndex < 0 || targetIndex >= controller.groupDatas.length) return;
 
     final currentGroup = controller.groupDatas[groupIndex];
-    final nextGroup = controller.groupDatas[groupIndex + 1];
+    final targetGroup = controller.groupDatas[targetIndex];
 
     try {
       final taskItem = currentGroup.items.cast<KanbanTask>().firstWhere(
         (t) => t.title == taskTitle,
       );
       controller.removeGroupItem(currentGroup.id, taskItem.id);
-      controller.addGroupItem(nextGroup.id, taskItem);
+      controller.addGroupItem(targetGroup.id, taskItem);
 
       _broadcastUpdate(currentGroup.id);
-      _broadcastUpdate(nextGroup.id);
+      _broadcastUpdate(targetGroup.id);
     } catch (e) {
       debugPrint('Task not found.');
     }
+  }
+
+  void _deleteTask(String categoryName, String taskTitle) {
+    final group = controller.groupDatas.firstWhere(
+      (g) => g.headerData.groupName == categoryName,
+    );
+    try {
+      final taskItem = group.items.cast<KanbanTask>().firstWhere(
+        (t) => t.title == taskTitle,
+      );
+      controller.removeGroupItem(group.id, taskItem.id);
+      _broadcastUpdate(group.id);
+    } catch (_) {}
   }
 
   Future<void> _handlePopOutCategory(AppFlowyGroupData columnData) async {
     if (_isWindowProcessing) return;
 
     final groupId = columnData.id;
+    final groupIndex = controller.groupDatas.indexWhere((g) => g.id == groupId);
+    final group = controller.groupDatas[groupIndex];
 
     setState(() {
       _isWindowProcessing = true;
@@ -192,10 +218,10 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
 
       // Otherwise, spawn the new window
       final payload = jsonEncode({
-        'title': columnData.headerData.groupName,
-        'items': columnData.items
-            .map((item) => (item as KanbanTask).title)
-            .toList(),
+        'title': group.headerData.groupName,
+        'items': group.items.map((item) => (item as KanbanTask).title).toList(),
+        'isFirst': groupIndex == 0,
+        'isLast': groupIndex == controller.groupDatas.length - 1,
       });
 
       final window = await WindowController.create(
@@ -208,9 +234,15 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       // Create the dedicated pipe to listen for checkouts from this new window
       final uniqueChannel = WindowMethodChannel('kanban_sync_$windowId');
       uniqueChannel.setMethodCallHandler((call) async {
-        if (call.method == 'check_out_task' && call.arguments != null) {
-          final payload = call.arguments as Map;
-          _advanceTaskToNextCategory(payload['category'], payload['task']);
+        final payload = call.arguments as Map?;
+        if (payload == null) return 'error';
+
+        if (call.method == 'move_next') {
+          _advanceTaskDirectionally(payload['category'], payload['task'], 1);
+        } else if (call.method == 'move_prev') {
+          _advanceTaskDirectionally(payload['category'], payload['task'], -1);
+        } else if (call.method == 'delete_task') {
+          _deleteTask(payload['category'], payload['task']);
         }
         return 'success';
       });
@@ -226,10 +258,14 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   }
 
   void _broadcastUpdate(String groupId) async {
-    final group = controller.groupDatas.firstWhere((g) => g.id == groupId);
+    final groupIndex = controller.groupDatas.indexWhere((g) => g.id == groupId);
+    final group = controller.groupDatas[groupIndex];
+
     final payload = {
       'title': group.headerData.groupName,
       'items': group.items.map((item) => (item as KanbanTask).title).toList(),
+      'isFirst': groupIndex == 0,
+      'isLast': groupIndex == controller.groupDatas.length - 1,
     };
 
     // Broadcast the update to ALL active unique channels

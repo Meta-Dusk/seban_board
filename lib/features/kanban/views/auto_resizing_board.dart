@@ -47,37 +47,59 @@ class AutoResizingBoard extends StatelessWidget {
           ),
           cardBuilder: (_, group, groupItem) {
             final task = groupItem as KanbanTask;
-            // Make the task edit feature on hover instead
-            return GestureDetector(
+            return _CardBuilder(
               key: ValueKey(task.id),
-              onDoubleTap: () => onEditTask(group.id, task),
-              child: AppFlowyGroupCard(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: .circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                margin: const .only(bottom: 12, left: 16, right: 16),
-                child: Padding(
-                  padding: const .all(16.0),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Text(task.title, textAlign: .left),
-                  ),
-                ),
-              ),
+              task: task,
+              groupId: group.id,
+              onEditTask: onEditTask,
             );
           },
           footerBuilder: (_, columnData) =>
               _AddTaskButton(onAddTask: () => onAddTask(columnData.id)),
         );
       },
+    ),
+  );
+}
+
+class _CardBuilder extends StatelessWidget {
+  const _CardBuilder({
+    super.key,
+    required this.task,
+    required this.groupId,
+    required this.onEditTask,
+  });
+
+  final KanbanTask task;
+  final String groupId;
+  final void Function(String groupId, KanbanTask task) onEditTask;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: .topCenter,
+    child: GestureDetector(
+      onDoubleTap: () => onEditTask(groupId, task),
+      child: AppFlowyGroupCard(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: .circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        margin: const .only(bottom: 12, left: 16, right: 16),
+        child: Padding(
+          padding: const .all(16.0),
+          child: SizedBox(
+            width: double.infinity,
+            child: Text(task.title, textAlign: .left),
+          ),
+        ),
+      ),
     ),
   );
 }
