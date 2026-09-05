@@ -1,10 +1,13 @@
-import 'package:appflowy_board/appflowy_board.dart';
-
-class KanbanTask extends AppFlowyGroupItem {
+class KanbanTask {
   final String title;
-
   KanbanTask(this.title);
-
-  @override
   String get id => title;
+}
+
+class KanbanCategory {
+  final String id;
+  final String name;
+  final List<KanbanTask> items;
+
+  KanbanCategory({required this.id, required this.name, required this.items});
 }

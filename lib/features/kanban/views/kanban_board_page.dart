@@ -1,8 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:appflowy_board/appflowy_board.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:seban_board/features/kanban/views/custom_title_bar.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 
 import '../models/kanban_task.dart';
@@ -16,89 +15,237 @@ class KanbanBoardPage extends StatefulWidget {
 }
 
 class _KanbanBoardPageState extends State<KanbanBoardPage> {
-  late AppFlowyBoardController controller;
   final syncChannel = const WindowMethodChannel('kanban_sync');
-
-  // Track which category IDs are currently popped out
   final Map<String, String> _activeCategoryWindows = {};
 
-  // Global lock to prevent concurrent engine spawning
   bool _isWindowProcessing = false;
-  // Tracks which specific category gets the loading spinner
   String? _processingGroupId;
+
+  double _columnWidth = 320.0;
+  final double _minColumnWidth = 280.0;
+
+  ThemeMode _themeMode = .system;
+  Color _seedColor = Colors.blue;
+
+  List<KanbanCategory> categories = [];
 
   @override
   void initState() {
     super.initState();
 
     syncChannel.setMethodCallHandler((call) async {
-      if (call.method == 'check_out_task' && call.arguments != null) {
-        final payload = call.arguments as Map;
-        _advanceTaskToNextCategory(payload['category'], payload['task']);
+      final payload = call.arguments as Map?;
+      if (payload == null) return 'error';
+
+      if (call.method == 'move_next') {
+        _advanceTaskDirectionally(payload['category'], payload['task'], 1);
+      } else if (call.method == 'move_prev') {
+        _advanceTaskDirectionally(payload['category'], payload['task'], -1);
+      } else if (call.method == 'delete_task') {
+        _deleteTask(payload['category'], payload['task']);
       }
       return 'success';
     });
 
-    final todoGroup = AppFlowyGroupData(
-      id: 'todo',
-      name: 'To Do',
-      items: [KanbanTask('Design the "Twist"')],
-    );
-
-    final progressGroup = AppFlowyGroupData(
-      id: 'progress',
-      name: 'In Progress',
-      items: [KanbanTask('Finish Sticky Note Popup Feature')],
-    );
-
-    final doneGroup = AppFlowyGroupData(
-      id: 'done',
-      name: 'Done',
-      items: [
-        KanbanTask('Auto-resizing columns UI'),
-        KanbanTask('Setup Multi-Window'),
-      ],
-    );
-
-    controller = AppFlowyBoardController(
-      onMoveGroupItem: (groupId, fromIndex, toIndex) =>
-          _broadcastUpdate(groupId),
-      onMoveGroupItemToGroup: (fromGroupId, fromIndex, toGroupId, toIndex) {
-        _broadcastUpdate(fromGroupId);
-        _broadcastUpdate(toGroupId);
-      },
-    );
-
-    controller.addGroup(todoGroup);
-    controller.addGroup(progressGroup);
-    controller.addGroup(doneGroup);
+    categories = [
+      KanbanCategory(
+        id: 'todo',
+        name: 'To Do',
+        items: [
+          KanbanTask('Design the "Twist"'),
+          KanbanTask('Add Themes (Such as dark mode)'),
+          KanbanTask('Add minimum size to all components'),
+          KanbanTask('Improve Title Bar'),
+        ],
+      ),
+      KanbanCategory(
+        id: 'progress',
+        name: 'In Progress',
+        items: [
+          KanbanTask('Update Kanban Board Architecture'),
+          KanbanTask('Clean Up Code'),
+        ],
+      ),
+      KanbanCategory(
+        id: 'done',
+        name: 'Done',
+        items: [
+          KanbanTask('Kanban Board'),
+          KanbanTask('Setup Multi-Window'),
+          KanbanTask('Sticky Note Feature'),
+          KanbanTask(
+            'Fix animation for tasks being transferred (visual transition bug?)',
+          ),
+          KanbanTask(
+            'Make tasks inside sticky notes be swipeable (transfer feature)',
+          ),
+          KanbanTask('Editable Categories'),
+        ],
+      ),
+    ];
   }
 
-  // --- CRUD METHODS WITH DIALOGS ---
+  /// Clamps the width so it can never crush the UI or expand infinitely
+  void _handleColumnResize(double delta) => setState(() {
+    _columnWidth = (_columnWidth + delta).clamp(_minColumnWidth, 800.0);
+  });
+
+  // --- Theme Updaters ---
+  void _updateThemeMode(ThemeMode mode) {
+    setState(() => _themeMode = mode);
+    _broadcastAllUpdates(); // Sync to sticky notes
+  }
+
+  void _updateSeedColor(Color color) {
+    setState(() => _seedColor = color);
+    _broadcastAllUpdates(); // Sync to sticky notes
+  }
+
+  void _broadcastAllUpdates() {
+    for (KanbanCategory group in categories) {
+      _broadcastUpdate(group.id);
+    }
+  }
+
+  // --- Kanban Logic Methods ---
+  void _onItemReorder(
+    int oldItemIndex,
+    int oldListIndex,
+    int newItemIndex,
+    int newListIndex,
+  ) {
+    setState(() {
+      final movedTask = categories[oldListIndex].items.removeAt(oldItemIndex);
+      categories[newListIndex].items.insert(newItemIndex, movedTask);
+    });
+
+    _broadcastUpdate(categories[oldListIndex].id);
+    if (oldListIndex != newListIndex) {
+      _broadcastUpdate(categories[newListIndex].id);
+    }
+  }
+
+  void _onListReorder(int oldListIndex, int newListIndex) {
+    setState(() {
+      final movedList = categories.removeAt(oldListIndex);
+      categories.insert(newListIndex, movedList);
+    });
+  }
+
+  // --- CATEGORY CRUD METHODS ---
 
   void _promptAddCategory() {
     _showInputDialog('New Category', (input) {
       final newGroupId = input.toLowerCase().replaceAll(' ', '_');
-      controller.addGroup(
-        AppFlowyGroupData(id: newGroupId, name: input, items: []),
-      );
-      setState(() {});
+      setState(() {
+        categories.add(KanbanCategory(id: newGroupId, name: input, items: []));
+      });
     });
   }
 
+  void _promptEditCategory(String groupId, String currentName) {
+    _showInputDialog('Rename Category', (input) {
+      final groupIndex = categories.indexWhere((g) => g.id == groupId);
+      if (groupIndex != -1) {
+        setState(() {
+          // Rebuild the category with the new name to ensure immutability is respected
+          final oldGroup = categories[groupIndex];
+          categories[groupIndex] = KanbanCategory(
+            id: oldGroup.id,
+            name: input,
+            items: oldGroup.items,
+          );
+        });
+        _broadcastUpdate(groupId);
+      }
+    }, initialText: currentName);
+  }
+
+  void _promptDeleteCategory(String groupId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Category?'),
+        content: const Text(
+          'Are you sure you want to delete this category and all of its tasks?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() => categories.removeWhere((g) => g.id == groupId));
+
+              // Automatically assassinate the sticky note if it is currently open
+              if (_activeCategoryWindows.containsKey(groupId)) {
+                final windowIdStr = _activeCategoryWindows[groupId]!;
+                final uniqueChannel = WindowMethodChannel(
+                  'kanban_sync_$windowIdStr',
+                );
+                uniqueChannel.invokeMethod('close_window');
+                _activeCategoryWindows.remove(groupId);
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- TASK CRUD METHODS ---
+
   void _promptAddTask(String groupId) {
     _showInputDialog('New Task', (input) {
-      controller.addGroupItem(groupId, KanbanTask(input));
+      final group = categories.firstWhere((g) => g.id == groupId);
+      setState(() {
+        group.items.add(KanbanTask(input));
+      });
       _broadcastUpdate(groupId);
     });
   }
 
   void _promptEditTask(String groupId, KanbanTask oldTask) {
     _showInputDialog('Edit Task', (input) {
-      controller.removeGroupItem(groupId, oldTask.id);
-      controller.addGroupItem(groupId, KanbanTask(input));
-      _broadcastUpdate(groupId);
+      final group = categories.firstWhere((g) => g.id == groupId);
+      final index = group.items.indexWhere((t) => t.id == oldTask.id);
+      if (index != -1) {
+        setState(() {
+          group.items[index] = KanbanTask(input);
+        });
+        _broadcastUpdate(groupId);
+      }
     }, initialText: oldTask.title);
+  }
+
+  void _promptDeleteTask(String groupId, KanbanTask task) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Task?'),
+        content: Text('Are you sure you want to delete "${task.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final group = categories.firstWhere((g) => g.id == groupId);
+              setState(() {
+                group.items.removeWhere((t) => t.id == task.id);
+              });
+              _broadcastUpdate(groupId);
+              Navigator.pop(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showInputDialog(
@@ -135,37 +282,71 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     );
   }
 
-  // --- LOGIC METHODS ---
+  void _advanceTaskDirectionally(
+    String categoryName,
+    String taskTitle,
+    int direction,
+  ) {
+    final groupIndex = categories.indexWhere((g) => g.name == categoryName);
+    if (groupIndex == -1) return;
 
-  void _advanceTaskToNextCategory(String categoryName, String taskTitle) {
-    final groupIndex = controller.groupDatas.indexWhere(
-      (g) => g.headerData.groupName == categoryName,
+    final targetIndex = groupIndex + direction;
+    if (targetIndex < 0 || targetIndex >= categories.length) return;
+
+    final currentGroup = categories[groupIndex];
+    final targetGroup = categories[targetIndex];
+
+    final taskIndex = currentGroup.items.indexWhere(
+      (t) => t.title == taskTitle,
     );
-    if (groupIndex == -1 || groupIndex >= controller.groupDatas.length - 1) {
-      return;
-    }
-
-    final currentGroup = controller.groupDatas[groupIndex];
-    final nextGroup = controller.groupDatas[groupIndex + 1];
-
-    try {
-      final taskItem = currentGroup.items.cast<KanbanTask>().firstWhere(
-        (t) => t.title == taskTitle,
-      );
-      controller.removeGroupItem(currentGroup.id, taskItem.id);
-      controller.addGroupItem(nextGroup.id, taskItem);
-
+    if (taskIndex != -1) {
+      setState(() {
+        final taskItem = currentGroup.items.removeAt(taskIndex);
+        targetGroup.items.add(taskItem);
+      });
       _broadcastUpdate(currentGroup.id);
-      _broadcastUpdate(nextGroup.id);
-    } catch (e) {
-      debugPrint('Task not found.');
+      _broadcastUpdate(targetGroup.id);
     }
   }
 
-  Future<void> _handlePopOutCategory(AppFlowyGroupData columnData) async {
+  void _deleteTask(String categoryName, String taskTitle) {
+    final group = categories.firstWhere((g) => g.name == categoryName);
+    setState(() {
+      group.items.removeWhere((t) => t.title == taskTitle);
+    });
+    _broadcastUpdate(group.id);
+  }
+
+  void _renameCategoryFromSticky(String groupId, String newName) {
+    final groupIndex = categories.indexWhere((g) => g.id == groupId);
+    if (groupIndex != -1) {
+      setState(() {
+        categories[groupIndex] = KanbanCategory(
+          id: groupId,
+          name: newName,
+          items: categories[groupIndex].items,
+        );
+      });
+      _broadcastUpdate(groupId);
+    }
+  }
+
+  void _deleteCategoryFromSticky(String groupId) {
+    setState(() => categories.removeWhere((g) => g.id == groupId));
+    if (_activeCategoryWindows.containsKey(groupId)) {
+      final windowIdStr = _activeCategoryWindows[groupId]!;
+      final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
+      uniqueChannel.invokeMethod('close_window');
+      _activeCategoryWindows.remove(groupId);
+    }
+  }
+
+  Future<void> _handlePopOutCategory(KanbanCategory columnData) async {
     if (_isWindowProcessing) return;
 
     final groupId = columnData.id;
+    final groupIndex = categories.indexWhere((g) => g.id == groupId);
+    final group = categories[groupIndex];
 
     setState(() {
       _isWindowProcessing = true;
@@ -173,7 +354,6 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     });
 
     try {
-      // If it's already open, command the sub-window to close itself
       if (_activeCategoryWindows.containsKey(groupId)) {
         final windowIdStr = _activeCategoryWindows[groupId]!;
         final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
@@ -190,12 +370,14 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
         if (closeSuccess) return;
       }
 
-      // Otherwise, spawn the new window
       final payload = jsonEncode({
-        'title': columnData.headerData.groupName,
-        'items': columnData.items
-            .map((item) => (item as KanbanTask).title)
-            .toList(),
+        'id': group.id,
+        'title': group.name,
+        'items': group.items.map((item) => item.title).toList(),
+        'isFirst': groupIndex == 0,
+        'isLast': groupIndex == categories.length - 1,
+        'themeMode': _themeMode.name,
+        'seedColor': _seedColor.toARGB32(),
       });
 
       final window = await WindowController.create(
@@ -205,12 +387,21 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       final windowId = window.windowId;
       _activeCategoryWindows[groupId] = windowId.toString();
 
-      // Create the dedicated pipe to listen for checkouts from this new window
       final uniqueChannel = WindowMethodChannel('kanban_sync_$windowId');
       uniqueChannel.setMethodCallHandler((call) async {
-        if (call.method == 'check_out_task' && call.arguments != null) {
-          final payload = call.arguments as Map;
-          _advanceTaskToNextCategory(payload['category'], payload['task']);
+        final payload = call.arguments as Map?;
+        if (payload == null) return 'error';
+
+        if (call.method == 'rename_category') {
+          _renameCategoryFromSticky(groupId, payload['newName']);
+        } else if (call.method == 'delete_category') {
+          _deleteCategoryFromSticky(groupId);
+        } else if (call.method == 'move_next') {
+          _advanceTaskDirectionally(payload['category'], payload['task'], 1);
+        } else if (call.method == 'move_prev') {
+          _advanceTaskDirectionally(payload['category'], payload['task'], -1);
+        } else if (call.method == 'delete_task') {
+          _deleteTask(payload['category'], payload['task']);
         }
         return 'success';
       });
@@ -226,14 +417,23 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   }
 
   void _broadcastUpdate(String groupId) async {
-    final group = controller.groupDatas.firstWhere((g) => g.id == groupId);
+    final groupIndex = categories.indexWhere((g) => g.id == groupId);
+    if (groupIndex == -1) return;
+    final group = categories[groupIndex];
+
     final payload = {
-      'title': group.headerData.groupName,
-      'items': group.items.map((item) => (item as KanbanTask).title).toList(),
+      'id': group.id,
+      'title': group.name,
+      'items': group.items.map((item) => item.title).toList(),
+      'isFirst': groupIndex == 0,
+      'isLast': groupIndex == categories.length - 1,
+      'themeMode': _themeMode.name,
+      'seedColor': _seedColor.toARGB32(),
     };
 
-    // Broadcast the update to ALL active unique channels
-    for (final windowIdStr in _activeCategoryWindows.values) {
+    // ONLY send the update to this specific category's window
+    if (_activeCategoryWindows.containsKey(groupId)) {
+      final windowIdStr = _activeCategoryWindows[groupId]!;
       try {
         final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
         await uniqueChannel.invokeMethod('update_category', payload);
@@ -244,53 +444,51 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.white,
-    body: Column(
-      children: [
-        CustomTitleBar(onAddCategory: _promptAddCategory),
-        AutoResizingBoard(
-          controller: controller,
-          onPopOutCategory: _handlePopOutCategory,
-          onAddTask: _promptAddTask,
-          onEditTask: _promptEditTask,
-          isProcessing: _isWindowProcessing,
-          processingGroupId: _processingGroupId,
-        ),
-      ],
-    ),
-  );
-}
+  Widget build(BuildContext context) {
+    final Brightness brightness = _themeMode == .system
+        ? MediaQuery.platformBrightnessOf(context)
+        : (_themeMode == .dark ? .dark : .light);
 
-class CustomTitleBar extends StatelessWidget {
-  final VoidCallback onAddCategory;
-
-  const CustomTitleBar({super.key, required this.onAddCategory});
-
-  @override
-  Widget build(BuildContext context) => DragToMoveArea(
-    child: Container(
-      height: 40,
-      width: double.infinity,
-      color: Colors.grey.withValues(alpha: 0.1),
-      alignment: .centerLeft,
-      padding: const .symmetric(horizontal: 16),
-      child: Row(
-        mainAxisAlignment: .spaceBetween,
-        children: [
-          const Text(
-            'Seban Board',
-            style: TextStyle(fontWeight: .bold, color: Colors.black87),
-          ),
-          IconButton(
-            onPressed: onAddCategory,
-            icon: const Icon(Icons.add_box, size: 18, color: Colors.black54),
-            tooltip: "Add Category",
-            padding: .zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
+    final theme = ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _seedColor,
+        brightness: brightness,
       ),
-    ),
-  );
+      useMaterial3: true,
+    );
+
+    return AnimatedTheme(
+      data: theme,
+      child: Scaffold(
+        backgroundColor: theme.colorScheme.surface,
+        body: Column(
+          mainAxisAlignment: .center,
+          children: [
+            CustomTitleBar(
+              onAddCategory: _promptAddCategory,
+              currentMode: _themeMode,
+              currentColor: _seedColor,
+              onModeChanged: _updateThemeMode,
+              onColorChanged: _updateSeedColor,
+            ),
+            AutoResizingBoard(
+              categories: categories,
+              columnWidth: _columnWidth,
+              onColumnResize: _handleColumnResize,
+              onItemReorder: _onItemReorder,
+              onListReorder: _onListReorder,
+              onPopOutCategory: _handlePopOutCategory,
+              onAddTask: _promptAddTask,
+              onEditTask: _promptEditTask,
+              onDeleteTask: _promptDeleteTask,
+              onEditCategory: _promptEditCategory,
+              onDeleteCategory: _promptDeleteCategory,
+              isProcessing: _isWindowProcessing,
+              processingGroupId: _processingGroupId,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
