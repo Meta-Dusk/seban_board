@@ -2,85 +2,115 @@ import 'package:flutter/material.dart';
 import 'package:drag_and_drop_lists/drag_and_drop_lists.dart';
 import '../models/kanban_task.dart';
 
-class AutoResizingBoard extends StatelessWidget {
+class AutoResizingBoard extends StatefulWidget {
   const AutoResizingBoard({
     super.key,
     required this.categories,
+    required this.columnWidth,
+    required this.onColumnResize,
     required this.onItemReorder,
     required this.onListReorder,
     required this.onPopOutCategory,
     required this.onAddTask,
     required this.onEditTask,
+    required this.onEditCategory,
+    required this.onDeleteCategory,
     required this.isProcessing,
     required this.processingGroupId,
   });
 
   final List<KanbanCategory> categories;
+  final double columnWidth;
+  final void Function(double delta) onColumnResize;
   final void Function(int, int, int, int) onItemReorder;
   final void Function(int, int) onListReorder;
   final Future<void> Function(KanbanCategory columnData) onPopOutCategory;
   final void Function(String groupId) onAddTask;
   final void Function(String groupId, KanbanTask task) onEditTask;
+  final void Function(String groupId, String currentName) onEditCategory;
+  final void Function(String groupId) onDeleteCategory;
   final bool isProcessing;
   final String? processingGroupId;
 
   @override
-  Widget build(BuildContext context) => Expanded(
-    child: LayoutBuilder(
-      builder: (_, constraints) {
-        final numColumns = categories.length;
-        if (numColumns == 0) return const SizedBox();
+  State<AutoResizingBoard> createState() => _AutoResizingBoardState();
+}
 
-        final totalPadding = (numColumns + 1) * 16.0;
-        final columnWidth = (constraints.maxWidth - totalPadding) / numColumns;
+class _AutoResizingBoardState extends State<AutoResizingBoard> {
+  final ScrollController _scrollController = ScrollController();
 
-        final categoryList = categories.map(
-          (category) => DragAndDropList(
-            header: _HeaderWidget(
-              columnData: category,
-              processingGroupId: processingGroupId,
-              isProcessing: isProcessing,
-              onPopOutCategory: onPopOutCategory,
-            ),
-            footer: _AddTaskButton(onAddTask: () => onAddTask(category.id)),
-            children: category.items
-                .map(
-                  (task) => DragAndDropItem(
-                    child: _CardBuilder(
-                      task: task,
-                      groupId: category.id,
-                      onEditTask: onEditTask,
-                    ),
-                  ),
-                )
-                .toList(),
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categoryList = widget.categories.map((category) {
+      final categoryItemsList = category.items.map(
+        (task) => DragAndDropItem(
+          child: _CardBuilder(
+            task: task,
+            groupId: category.id,
+            onEditTask: widget.onEditTask,
           ),
-        );
+        ),
+      );
 
-        return DragAndDropLists(
-          horizontalAlignment: .center,
-          verticalAlignment: .center,
-          children: categoryList.toList(),
-          onItemReorder: onItemReorder,
-          onListReorder: onListReorder,
-          axis: .horizontal,
-          listWidth: columnWidth,
-          listDraggingWidth: columnWidth,
-          listPadding: const .symmetric(horizontal: 8),
-          itemDecorationWhileDragging: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
+      return DragAndDropList(
+        header: _HeaderWidget(
+          columnData: category,
+          processingGroupId: widget.processingGroupId,
+          isProcessing: widget.isProcessing,
+          onPopOutCategory: widget.onPopOutCategory,
+          onEditCategory: widget.onEditCategory,
+          onDeleteCategory: widget.onDeleteCategory,
+          onColumnResize: widget.onColumnResize,
+        ),
+        footer: _AddTaskButton(onAddTask: () => widget.onAddTask(category.id)),
+        children: categoryItemsList.toList(),
+      );
+    });
+
+    final dragAndDropLists = DragAndDropLists(
+      children: categoryList.toList(),
+      scrollController: _scrollController,
+      onItemReorder: widget.onItemReorder,
+      onListReorder: widget.onListReorder,
+      axis: Axis.horizontal,
+      listWidth: widget.columnWidth,
+      listDraggingWidth: widget.columnWidth,
+      listPadding: const .symmetric(horizontal: 8),
+      itemDragOnLongPress: false,
+      listDragOnLongPress: false,
+      itemDecorationWhileDragging: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+    );
+
+    return Expanded(
+      child: widget.categories.isEmpty
+          ? const SizedBox()
+          : Scrollbar(
+              controller: _scrollController,
+              // thumbVisibility: true,
+              thickness: 8.0,
+              radius: const .circular(8),
+              child: Padding(
+                padding: const .only(bottom: 12.0),
+                child: dragAndDropLists,
               ),
-            ],
-          ),
-        );
-      },
-    ),
-  );
+            ),
+    );
+  }
 }
 
 class _CardBuilder extends StatelessWidget {
@@ -149,12 +179,18 @@ class _HeaderWidget extends StatelessWidget {
     required this.processingGroupId,
     required this.isProcessing,
     required this.onPopOutCategory,
+    required this.onEditCategory,
+    required this.onDeleteCategory,
+    required this.onColumnResize,
   });
 
   final KanbanCategory columnData;
   final String? processingGroupId;
   final bool isProcessing;
   final Future<void> Function(KanbanCategory columnData) onPopOutCategory;
+  final void Function(String groupId, String currentName) onEditCategory;
+  final void Function(String groupId) onDeleteCategory;
+  final void Function(double delta) onColumnResize;
 
   @override
   Widget build(BuildContext context) {
@@ -177,25 +213,76 @@ class _HeaderWidget extends StatelessWidget {
       tooltip: "Toggle sticky note",
     );
 
+    final popupMenuButton = PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, size: 18, color: Colors.grey),
+      tooltip: "Category Options",
+      onSelected: (value) {
+        if (value == 'edit') {
+          onEditCategory(columnData.id, columnData.name);
+        } else if (value == 'delete') {
+          onDeleteCategory(columnData.id);
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: 'edit', child: Text('Rename Category')),
+        const PopupMenuItem(
+          value: 'delete',
+          child: Text('Delete Category', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    );
+
+    final dragHandle = MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        behavior: .opaque,
+        onHorizontalDragDown: (_) {},
+        onHorizontalDragStart: (_) {},
+        onHorizontalDragUpdate: (details) => onColumnResize(details.delta.dx),
+        child: Container(
+          width: 16,
+          color: Colors.transparent,
+          child: Center(
+            child: VerticalDivider(
+              width: 2,
+              thickness: 2,
+              color: Colors.grey.withValues(alpha: 0.3),
+              indent: 14,
+              endIndent: 14,
+            ),
+          ),
+        ),
+      ),
+    );
+
     return Container(
       height: 50,
       margin: const .symmetric(horizontal: 8),
       decoration: BoxDecoration(
         color: Colors.grey.withValues(alpha: 0.05),
-        borderRadius: const BorderRadius.vertical(top: .circular(8)),
+        borderRadius: const .vertical(top: .circular(8)),
       ),
       child: Row(
         children: [
           const SizedBox(width: 16),
           const Icon(Icons.circle, size: 12, color: Colors.blueAccent),
           const SizedBox(width: 8),
+
           Expanded(
             child: Text(
               columnData.name,
               style: const TextStyle(fontWeight: .w600),
+              overflow: .ellipsis,
             ),
           ),
-          processingGroupId == columnData.id ? loadingIndicator : toggleButton,
+
+          if (processingGroupId == columnData.id)
+            loadingIndicator
+          else
+            toggleButton,
+
+          popupMenuButton,
+          dragHandle,
         ],
       ),
     );

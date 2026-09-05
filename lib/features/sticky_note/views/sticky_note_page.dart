@@ -13,6 +13,7 @@ class StickyNotePage extends StatefulWidget {
 }
 
 class _StickyNotePageState extends State<StickyNotePage> {
+  late String groupId;
   late String title;
   late List<String> items;
   late bool isFirst;
@@ -21,6 +22,7 @@ class _StickyNotePageState extends State<StickyNotePage> {
   @override
   void initState() {
     super.initState();
+    groupId = widget.data['id'] ?? '';
     title = widget.data['title'] ?? "Notes";
     items = List<String>.from(widget.data['items'] ?? []);
     isFirst = widget.data['isFirst'] ?? false;
@@ -36,30 +38,93 @@ class _StickyNotePageState extends State<StickyNotePage> {
         return 'success';
       } else if (call.method == 'update_category' && call.arguments != null) {
         final payload = call.arguments as Map;
-        if (payload['title'] == title) {
-          setState(() {
-            items = List<String>.from(payload['items']);
-            isFirst = payload['isFirst'] ?? false;
-            isLast = payload['isLast'] ?? false;
-          });
-        }
+        setState(() {
+          title = payload['title'];
+          items = List<String>.from(payload['items']);
+          isFirst = payload['isFirst'] ?? false;
+          isLast = payload['isLast'] ?? false;
+        });
       }
       return 'success';
     });
   }
 
+  void _promptEditCategory() {
+    String input = title;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename Category'),
+        content: TextFormField(
+          initialValue: title,
+          autofocus: true,
+          onChanged: (val) => input = val,
+          onFieldSubmitted: (val) {
+            if (val.isNotEmpty) _submitRename(input);
+            Navigator.pop(context);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (input.isNotEmpty) _submitRename(input);
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _submitRename(String newName) {
+    final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
+    uniqueChannel.invokeMethod('rename_category', {'newName': newName});
+  }
+
+  void _promptDeleteCategory() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Category?'),
+        content: const Text(
+          'Are you sure you want to delete this category and all of its tasks?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final uniqueChannel = WindowMethodChannel(
+                'kanban_sync_${widget.windowId}',
+              );
+              uniqueChannel.invokeMethod('delete_category');
+              Navigator.pop(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.transparent,
-    body: Padding(
-      padding: const .all(12.0),
-      child: StickyNoteWidget(
-        title: title,
-        items: items,
-        windowId: widget.windowId,
-        isFirst: isFirst,
-        isLast: isLast,
-      ),
+    body: StickyNoteWidget(
+      title: title,
+      items: items,
+      windowId: widget.windowId,
+      isFirst: isFirst,
+      isLast: isLast,
+      onEditCategory: _promptEditCategory,
+      onDeleteCategory: _promptDeleteCategory,
     ),
   );
 }
@@ -72,6 +137,8 @@ class StickyNoteWidget extends StatelessWidget {
     required this.windowId,
     required this.isFirst,
     required this.isLast,
+    required this.onEditCategory,
+    required this.onDeleteCategory,
   });
 
   final String title;
@@ -79,6 +146,8 @@ class StickyNoteWidget extends StatelessWidget {
   final String windowId;
   final bool isFirst;
   final bool isLast;
+  final VoidCallback onEditCategory;
+  final VoidCallback onDeleteCategory;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -96,7 +165,11 @@ class StickyNoteWidget extends StatelessWidget {
     child: Column(
       crossAxisAlignment: .stretch,
       children: [
-        _DraggableStickyNoteTitleBar(title: title),
+        _DraggableStickyNoteTitleBar(
+          title: title,
+          onEditCategory: onEditCategory,
+          onDeleteCategory: onDeleteCategory,
+        ),
         _StickyNoteWidgetContent(
           title: title,
           items: items,
@@ -149,7 +222,7 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
           secondaryBackground: _buildSwipeBackground(
             color: widget.isFirst ? Colors.redAccent : Colors.blue,
             icon: widget.isFirst ? Icons.delete : Icons.arrow_back,
-            alignment: Alignment.centerRight,
+            alignment: .centerRight,
             padding: const .only(right: 16),
           ),
           confirmDismiss: (direction) async {
@@ -164,7 +237,6 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
             }
           },
           onDismissed: (direction) {
-            // Remove locally first
             setState(() => widget.items.removeAt(index));
           },
           child: Padding(
@@ -232,38 +304,74 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
 }
 
 class _DraggableStickyNoteTitleBar extends StatelessWidget {
-  const _DraggableStickyNoteTitleBar({required this.title});
+  const _DraggableStickyNoteTitleBar({
+    required this.title,
+    required this.onEditCategory,
+    required this.onDeleteCategory,
+  });
 
   final String title;
+  final VoidCallback onEditCategory;
+  final VoidCallback onDeleteCategory;
 
   @override
-  Widget build(BuildContext context) => DragToMoveArea(
-    child: Container(
-      padding: const .all(12),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: Colors.black.withValues(alpha: 0.05)),
+  Widget build(BuildContext context) {
+    final titleText = Expanded(
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontWeight: .bold,
+          fontSize: 16,
+          color: Colors.black87,
+        ),
+        overflow: .ellipsis,
+      ),
+    );
+
+    final contextMenuButton = PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, size: 18, color: Colors.black54),
+      tooltip: "Category Options",
+      onSelected: (value) {
+        if (value == 'edit') onEditCategory();
+        if (value == 'delete') onDeleteCategory();
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: 'edit', child: Text('Rename Category')),
+        const PopupMenuItem(
+          value: 'delete',
+          child: Text('Delete Category', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    );
+
+    final closeButton = IconButton(
+      icon: const Icon(Icons.close, size: 18, color: Colors.black54),
+      onPressed: () async => await windowManager.close(),
+    );
+
+    return DragToMoveArea(
+      child: Container(
+        padding: const .only(left: 12, right: 4, top: 8, bottom: 8),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Colors.black.withValues(alpha: 0.05)),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: .spaceBetween,
+          children: [
+            titleText,
+            Row(
+              mainAxisSize: .min,
+              children: [
+                contextMenuButton,
+                closeButton,
+                const SizedBox(width: 8),
+              ],
+            ),
+          ],
         ),
       ),
-      child: Row(
-        mainAxisAlignment: .spaceBetween,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: Colors.black87,
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 18, color: Colors.black54),
-            padding: .zero,
-            constraints: const BoxConstraints(),
-            onPressed: () async => await windowManager.close(),
-          ),
-        ],
-      ),
-    ),
-  );
+    );
+  }
 }

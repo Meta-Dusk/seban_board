@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:seban_board/features/kanban/views/custom_title_bar.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 
 import '../models/kanban_task.dart';
@@ -21,6 +21,14 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   String? _processingGroupId;
 
   List<KanbanCategory> categories = [];
+
+  double _columnWidth = 320.0;
+  final double _minColumnWidth = 280.0;
+
+  /// Clamps the width so it can never crush the UI or expand infinitely
+  void _handleColumnResize(double delta) => setState(() {
+    _columnWidth = (_columnWidth + delta).clamp(_minColumnWidth, 800.0);
+  });
 
   @override
   void initState() {
@@ -48,7 +56,6 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
           KanbanTask('Design the "Twist"'),
           KanbanTask('Add Themes (Such as dark mode)'),
           KanbanTask('Add minimum size to all components'),
-          KanbanTask('Editable Categories'),
           KanbanTask('Improve Title Bar'),
         ],
       ),
@@ -73,6 +80,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
           KanbanTask(
             'Make tasks inside sticky notes be swipeable (transfer feature)',
           ),
+          KanbanTask('Editable Categories'),
         ],
       ),
     ];
@@ -109,6 +117,59 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
         categories.add(KanbanCategory(id: newGroupId, name: input, items: []));
       });
     });
+  }
+
+  void _promptEditCategory(String groupId, String currentName) {
+    _showInputDialog('Rename Category', (input) {
+      final groupIndex = categories.indexWhere((g) => g.id == groupId);
+      if (groupIndex != -1) {
+        setState(() {
+          // Rebuild the category with the new name to ensure immutability is respected
+          final oldGroup = categories[groupIndex];
+          categories[groupIndex] = KanbanCategory(
+            id: oldGroup.id,
+            name: input,
+            items: oldGroup.items,
+          );
+        });
+        _broadcastUpdate(groupId);
+      }
+    }, initialText: currentName);
+  }
+
+  void _promptDeleteCategory(String groupId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Category?'),
+        content: const Text(
+          'Are you sure you want to delete this category and all of its tasks?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() => categories.removeWhere((g) => g.id == groupId));
+
+              // Automatically assassinate the sticky note if it is currently open
+              if (_activeCategoryWindows.containsKey(groupId)) {
+                final windowIdStr = _activeCategoryWindows[groupId]!;
+                final uniqueChannel = WindowMethodChannel(
+                  'kanban_sync_$windowIdStr',
+                );
+                uniqueChannel.invokeMethod('close_window');
+                _activeCategoryWindows.remove(groupId);
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _promptAddTask(String groupId) {
@@ -203,6 +264,30 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     _broadcastUpdate(group.id);
   }
 
+  void _renameCategoryFromSticky(String groupId, String newName) {
+    final groupIndex = categories.indexWhere((g) => g.id == groupId);
+    if (groupIndex != -1) {
+      setState(() {
+        categories[groupIndex] = KanbanCategory(
+          id: groupId,
+          name: newName,
+          items: categories[groupIndex].items,
+        );
+      });
+      _broadcastUpdate(groupId);
+    }
+  }
+
+  void _deleteCategoryFromSticky(String groupId) {
+    setState(() => categories.removeWhere((g) => g.id == groupId));
+    if (_activeCategoryWindows.containsKey(groupId)) {
+      final windowIdStr = _activeCategoryWindows[groupId]!;
+      final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
+      uniqueChannel.invokeMethod('close_window');
+      _activeCategoryWindows.remove(groupId);
+    }
+  }
+
   Future<void> _handlePopOutCategory(KanbanCategory columnData) async {
     if (_isWindowProcessing) return;
 
@@ -233,6 +318,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       }
 
       final payload = jsonEncode({
+        'id': group.id,
         'title': group.name,
         'items': group.items.map((item) => item.title).toList(),
         'isFirst': groupIndex == 0,
@@ -251,7 +337,11 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
         final payload = call.arguments as Map?;
         if (payload == null) return 'error';
 
-        if (call.method == 'move_next') {
+        if (call.method == 'rename_category') {
+          _renameCategoryFromSticky(groupId, payload['newName']);
+        } else if (call.method == 'delete_category') {
+          _deleteCategoryFromSticky(groupId);
+        } else if (call.method == 'move_next') {
           _advanceTaskDirectionally(payload['category'], payload['task'], 1);
         } else if (call.method == 'move_prev') {
           _advanceTaskDirectionally(payload['category'], payload['task'], -1);
@@ -277,13 +367,16 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     final group = categories[groupIndex];
 
     final payload = {
+      'id': group.id,
       'title': group.name,
       'items': group.items.map((item) => item.title).toList(),
       'isFirst': groupIndex == 0,
       'isLast': groupIndex == categories.length - 1,
     };
 
-    for (final windowIdStr in _activeCategoryWindows.values) {
+    // ONLY send the update to this specific category's window
+    if (_activeCategoryWindows.containsKey(groupId)) {
+      final windowIdStr = _activeCategoryWindows[groupId]!;
       try {
         final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
         await uniqueChannel.invokeMethod('update_category', payload);
@@ -302,48 +395,19 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
         CustomTitleBar(onAddCategory: _promptAddCategory),
         AutoResizingBoard(
           categories: categories,
+          columnWidth: _columnWidth,
+          onColumnResize: _handleColumnResize,
           onItemReorder: _onItemReorder,
           onListReorder: _onListReorder,
           onPopOutCategory: _handlePopOutCategory,
           onAddTask: _promptAddTask,
           onEditTask: _promptEditTask,
+          onEditCategory: _promptEditCategory,
+          onDeleteCategory: _promptDeleteCategory,
           isProcessing: _isWindowProcessing,
           processingGroupId: _processingGroupId,
         ),
       ],
-    ),
-  );
-}
-
-class CustomTitleBar extends StatelessWidget {
-  final VoidCallback onAddCategory;
-
-  const CustomTitleBar({super.key, required this.onAddCategory});
-
-  @override
-  Widget build(BuildContext context) => DragToMoveArea(
-    child: Container(
-      height: 40,
-      width: double.infinity,
-      color: Colors.grey.withValues(alpha: 0.1),
-      alignment: Alignment.centerLeft,
-      padding: const .symmetric(horizontal: 16),
-      child: Row(
-        mainAxisAlignment: .spaceBetween,
-        children: [
-          const Text(
-            'Seban Board',
-            style: TextStyle(fontWeight: .bold, color: Colors.black87),
-          ),
-          IconButton(
-            onPressed: onAddCategory,
-            icon: const Icon(Icons.add_box, size: 18, color: Colors.black54),
-            tooltip: "Add Category",
-            padding: .zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
-      ),
     ),
   );
 }
