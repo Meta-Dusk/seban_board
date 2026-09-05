@@ -110,6 +110,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     });
   }
 
+  // --- CATEGORY CRUD METHODS ---
+
   void _promptAddCategory() {
     _showInputDialog('New Category', (input) {
       final newGroupId = input.toLowerCase().replaceAll(' ', '_');
@@ -172,6 +174,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     );
   }
 
+  // --- TASK CRUD METHODS ---
+
   void _promptAddTask(String groupId) {
     _showInputDialog('New Task', (input) {
       final group = categories.firstWhere((g) => g.id == groupId);
@@ -193,6 +197,33 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
         _broadcastUpdate(groupId);
       }
     }, initialText: oldTask.title);
+  }
+
+  void _promptDeleteTask(String groupId, KanbanTask task) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Task?'),
+        content: Text('Are you sure you want to delete "${task.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final group = categories.firstWhere((g) => g.id == groupId);
+              setState(() {
+                group.items.removeWhere((t) => t.id == task.id);
+              });
+              _broadcastUpdate(groupId);
+              Navigator.pop(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showInputDialog(
@@ -402,6 +433,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
           onPopOutCategory: _handlePopOutCategory,
           onAddTask: _promptAddTask,
           onEditTask: _promptEditTask,
+          onDeleteTask: _promptDeleteTask,
           onEditCategory: _promptEditCategory,
           onDeleteCategory: _promptDeleteCategory,
           isProcessing: _isWindowProcessing,

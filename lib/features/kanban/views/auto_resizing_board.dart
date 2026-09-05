@@ -13,6 +13,7 @@ class AutoResizingBoard extends StatefulWidget {
     required this.onPopOutCategory,
     required this.onAddTask,
     required this.onEditTask,
+    required this.onDeleteTask,
     required this.onEditCategory,
     required this.onDeleteCategory,
     required this.isProcessing,
@@ -27,6 +28,7 @@ class AutoResizingBoard extends StatefulWidget {
   final Future<void> Function(KanbanCategory columnData) onPopOutCategory;
   final void Function(String groupId) onAddTask;
   final void Function(String groupId, KanbanTask task) onEditTask;
+  final void Function(String groupId, KanbanTask task) onDeleteTask;
   final void Function(String groupId, String currentName) onEditCategory;
   final void Function(String groupId) onDeleteCategory;
   final bool isProcessing;
@@ -54,6 +56,7 @@ class _AutoResizingBoardState extends State<AutoResizingBoard> {
             task: task,
             groupId: category.id,
             onEditTask: widget.onEditTask,
+            onDeleteTask: widget.onDeleteTask,
           ),
         ),
       );
@@ -118,34 +121,82 @@ class _CardBuilder extends StatelessWidget {
     required this.task,
     required this.groupId,
     required this.onEditTask,
+    required this.onDeleteTask,
   });
 
   final KanbanTask task;
   final String groupId;
   final void Function(String groupId, KanbanTask task) onEditTask;
+  final void Function(String groupId, KanbanTask task) onDeleteTask;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onDoubleTap: () => onEditTask(groupId, task),
-    child: Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: .circular(8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+  Widget build(BuildContext context) => Padding(
+    padding: const .only(bottom: 12, left: 8, right: 8),
+    child: Dismissible(
+      key: ValueKey('dismiss_${task.id}'),
+      direction: .horizontal,
+
+      // Swipe Right: Edit
+      background: _buildSwipeBackground(
+        color: Colors.blue,
+        icon: Icons.edit,
+        alignment: Alignment.centerLeft,
+        padding: const .only(left: 20),
       ),
-      margin: const .only(bottom: 12, left: 8, right: 8),
-      padding: const .all(16.0),
-      child: SizedBox(
-        width: double.infinity,
-        child: Text(task.title, textAlign: .left),
+
+      // Swipe Left: Delete
+      secondaryBackground: _buildSwipeBackground(
+        color: Colors.redAccent,
+        icon: Icons.delete,
+        alignment: .centerRight,
+        padding: const .only(right: 20),
+      ),
+
+      confirmDismiss: (direction) async {
+        if (direction == .startToEnd) {
+          // Edit gesture
+          onEditTask(groupId, task);
+          return false;
+        } else {
+          // Delete gesture
+          onDeleteTask(groupId, task);
+          return false;
+        }
+      },
+      child: GestureDetector(
+        onDoubleTap: () => onEditTask(groupId, task),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: .circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          padding: const .all(16.0),
+          child: SizedBox(
+            width: double.infinity,
+            child: Text(task.title, textAlign: .left),
+          ),
+        ),
       ),
     ),
+  );
+
+  Widget _buildSwipeBackground({
+    required Color color,
+    required IconData icon,
+    required Alignment alignment,
+    required EdgeInsets padding,
+  }) => Container(
+    alignment: alignment,
+    padding: padding,
+    decoration: BoxDecoration(color: color, borderRadius: .circular(8)),
+    child: Icon(icon, color: Colors.white, size: 20),
   );
 }
 
