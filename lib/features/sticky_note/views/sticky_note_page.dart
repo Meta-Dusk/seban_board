@@ -413,7 +413,6 @@ class _DraggableStickyNoteTitleBar extends StatelessWidget {
 
     final colorSelector = SeedColorSelector(
       currentColor: currentColor,
-      color: colorScheme.onPrimaryContainer,
       onColorChanged: onColorChanged,
     );
 

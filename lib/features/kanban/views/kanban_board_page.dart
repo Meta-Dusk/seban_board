@@ -5,7 +5,7 @@ import 'package:seban_board/features/kanban/views/custom_title_bar.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 
 import '../models/kanban_task.dart';
-import 'auto_resizing_board.dart';
+import 'auto_resizing_board/auto_resizing_board.dart';
 
 class KanbanBoardPage extends StatefulWidget {
   const KanbanBoardPage({super.key});
@@ -134,31 +134,29 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
 
   // --- CATEGORY CRUD METHODS ---
 
-  void _promptAddCategory() {
-    _showInputDialog('New Category', (input) {
-      final newGroupId = input.toLowerCase().replaceAll(' ', '_');
-      setState(() {
-        categories.add(KanbanCategory(id: newGroupId, name: input, items: []));
-      });
+  void _submitAddCategory(String categoryName) {
+    final newGroupId = categoryName.toLowerCase().replaceAll(' ', '_');
+    setState(() {
+      categories.add(
+        KanbanCategory(id: newGroupId, name: categoryName, items: []),
+      );
     });
   }
 
-  void _promptEditCategory(String groupId, String currentName) {
-    _showInputDialog('Rename Category', (input) {
-      final groupIndex = categories.indexWhere((g) => g.id == groupId);
-      if (groupIndex != -1) {
-        setState(() {
-          // Rebuild the category with the new name to ensure immutability is respected
-          final oldGroup = categories[groupIndex];
-          categories[groupIndex] = KanbanCategory(
-            id: oldGroup.id,
-            name: input,
-            items: oldGroup.items,
-          );
-        });
-        _broadcastUpdate(groupId);
-      }
-    }, initialText: currentName);
+  void _submitEditCategory(String groupId, String newName) {
+    if (newName.trim().isEmpty) return;
+    final groupIndex = categories.indexWhere((g) => g.id == groupId);
+    if (groupIndex != -1) {
+      setState(() {
+        final oldGroup = categories[groupIndex];
+        categories[groupIndex] = KanbanCategory(
+          id: oldGroup.id,
+          name: newName,
+          items: oldGroup.items,
+        );
+      });
+      _broadcastUpdate(groupId);
+    }
   }
 
   void _promptDeleteCategory(String groupId) {
@@ -198,35 +196,40 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
 
   // --- TASK CRUD METHODS ---
 
-  void _promptAddTask(String groupId) {
-    _showInputDialog('New Task', (input) {
-      final group = categories.firstWhere((g) => g.id == groupId);
-      setState(() {
-        group.items.add(KanbanTask(input));
-      });
-      _broadcastUpdate(groupId);
+  void _submitAddTask(String groupId, String taskTitle) {
+    final group = categories.firstWhere((g) => g.id == groupId);
+    setState(() {
+      group.items.add(KanbanTask(taskTitle));
     });
+    _broadcastUpdate(groupId);
   }
 
-  void _promptEditTask(String groupId, KanbanTask oldTask) {
-    _showInputDialog('Edit Task', (input) {
-      final group = categories.firstWhere((g) => g.id == groupId);
-      final index = group.items.indexWhere((t) => t.id == oldTask.id);
-      if (index != -1) {
-        setState(() {
-          group.items[index] = KanbanTask(input);
-        });
-        _broadcastUpdate(groupId);
-      }
-    }, initialText: oldTask.title);
+  void _submitEditTask(String groupId, KanbanTask oldTask, String newTitle) {
+    if (newTitle.trim().isEmpty) return;
+    final group = categories.firstWhere((g) => g.id == groupId);
+    final index = group.items.indexWhere((t) => t.id == oldTask.id);
+    if (index != -1) {
+      setState(() {
+        group.items[index] = KanbanTask(newTitle);
+      });
+      _broadcastUpdate(groupId);
+    }
   }
 
   void _promptDeleteTask(String groupId, KanbanTask task) {
+    final colorScheme = Theme.of(context).colorScheme;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Task?'),
-        content: Text('Are you sure you want to delete "${task.title}"?'),
+        title: Text(
+          'Delete Task?',
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+        content: Text(
+          'Are you sure you want to delete "${task.title}"?',
+          style: TextStyle(color: colorScheme.onSurface),
+        ),
+        backgroundColor: colorScheme.surfaceContainerHigh,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -245,40 +248,6 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
           ),
         ],
       ),
-    );
-  }
-
-  void _showInputDialog(
-    String title,
-    Function(String) onSubmit, {
-    String initialText = '',
-  }) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        String input = initialText;
-        return AlertDialog(
-          title: Text(title),
-          content: TextFormField(
-            initialValue: initialText,
-            autofocus: true,
-            onChanged: (val) => input = val,
-            onFieldSubmitted: (val) {
-              if (val.isNotEmpty) onSubmit(val);
-              Navigator.pop(context);
-            },
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                if (input.isNotEmpty) onSubmit(input);
-                Navigator.pop(context);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -406,7 +375,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
         return 'success';
       });
     } finally {
-      await Future.delayed(const Duration(milliseconds: 1600));
+      await Future.delayed(const Duration(milliseconds: 400));
       if (mounted) {
         setState(() {
           _isWindowProcessing = false;
@@ -465,7 +434,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
           mainAxisAlignment: .center,
           children: [
             CustomTitleBar(
-              onAddCategory: _promptAddCategory,
+              onAddCategory: _submitAddCategory,
               currentMode: _themeMode,
               currentColor: _seedColor,
               onModeChanged: _updateThemeMode,
@@ -478,10 +447,10 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
               onItemReorder: _onItemReorder,
               onListReorder: _onListReorder,
               onPopOutCategory: _handlePopOutCategory,
-              onAddTask: _promptAddTask,
-              onEditTask: _promptEditTask,
+              onAddTask: _submitAddTask,
+              onEditTask: _submitEditTask,
               onDeleteTask: _promptDeleteTask,
-              onEditCategory: _promptEditCategory,
+              onEditCategory: _submitEditCategory,
               onDeleteCategory: _promptDeleteCategory,
               isProcessing: _isWindowProcessing,
               processingGroupId: _processingGroupId,

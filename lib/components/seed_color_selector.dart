@@ -4,39 +4,37 @@ class SeedColorSelector extends StatelessWidget {
   const SeedColorSelector({
     super.key,
     required this.currentColor,
-    required this.color,
     required this.onColorChanged,
   });
 
   final Color currentColor;
-  final Color color;
   final ValueChanged<Color> onColorChanged;
 
+  static const colorList = [
+    Colors.blue,
+    Colors.red,
+    Colors.green,
+    Colors.orange,
+    Colors.purple,
+  ];
+
   @override
-  Widget build(BuildContext context) {
-    const colorList = [
-      Colors.blue,
-      Colors.red,
-      Colors.green,
-      Colors.orange,
-      Colors.purple,
-    ];
+  Widget build(BuildContext context) => IconButton(
+    icon: Icon(Icons.circle, color: currentColor, size: 16),
+    tooltip: "Cycle Theme Color",
+    padding: const .symmetric(horizontal: 8),
+    constraints: const BoxConstraints(),
+    onPressed: () {
+      // Find the current color's index (using toARGB32() for strict safety)
+      int currentIndex = colorList.indexWhere(
+        (c) => c.toARGB32() == currentColor.toARGB32(),
+      );
 
-    final mappedColors = colorList.map(
-      (color) => DropdownMenuItem(
-        value: color,
-        alignment: .center,
-        child: Icon(Icons.circle, color: color, size: 16),
-      ),
-    );
+      // If not found (fallback), default to 0. Otherwise, increment and wrap around.
+      if (currentIndex == -1) currentIndex = 0;
+      final nextIndex = (currentIndex + 1) % colorList.length;
 
-    return DropdownButton<Color>(
-      value: currentColor,
-      underline: const SizedBox(),
-      padding: const .symmetric(horizontal: 4),
-      icon: Icon(Icons.color_lens, size: 16, color: color),
-      onChanged: (val) => onColorChanged(val!),
-      items: mappedColors.toList(),
-    );
-  }
+      onColorChanged(colorList[nextIndex]);
+    },
+  );
 }
