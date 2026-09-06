@@ -43,6 +43,15 @@ class _HeaderWidgetState extends State<HeaderWidget> {
   }
 
   @override
+  void didUpdateWidget(covariant HeaderWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If the main board's data changed in the background, update the controller
+    if (oldWidget.columnData.name != widget.columnData.name && !_isEditing) {
+      _controller.text = widget.columnData.name;
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();

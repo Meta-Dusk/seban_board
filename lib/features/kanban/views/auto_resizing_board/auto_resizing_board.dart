@@ -171,6 +171,15 @@ class _CardBuilderState extends State<_CardBuilder> {
   }
 
   @override
+  void didUpdateWidget(covariant _CardBuilder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If the main board's data changed in the background, update the controller
+    if (oldWidget.task.title != widget.task.title && !_isEditing) {
+      _controller.text = widget.task.title;
+    }
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
@@ -207,7 +216,7 @@ class _CardBuilderState extends State<_CardBuilder> {
       padding: const .only(bottom: 12, left: 8, right: 8),
       child: Dismissible(
         key: ValueKey('dismiss_${widget.task.id}'),
-        direction: DismissDirection.horizontal,
+        direction: .horizontal,
         background: const _SwipeBackground(
           color: Colors.blue,
           icon: Icons.edit,
@@ -217,7 +226,7 @@ class _CardBuilderState extends State<_CardBuilder> {
         secondaryBackground: const _SwipeBackground(
           color: Colors.redAccent,
           icon: Icons.delete,
-          alignment: Alignment.centerRight,
+          alignment: .centerRight,
           padding: .only(right: 20),
         ),
         confirmDismiss: (direction) async {

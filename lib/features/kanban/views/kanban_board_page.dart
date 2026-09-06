@@ -216,11 +216,11 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     }
   }
 
-  void _promptDeleteTask(String groupId, KanbanTask task) {
-    final colorScheme = Theme.of(context).colorScheme;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
+  void _promptDeleteTask(String groupId, KanbanTask task) => showDialog(
+    context: context,
+    builder: (context) {
+      final colorScheme = Theme.of(context).colorScheme;
+      return AlertDialog(
         title: Text(
           'Delete Task?',
           style: TextStyle(color: colorScheme.onSurfaceVariant),
@@ -247,9 +247,9 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
-      ),
-    );
-  }
+      );
+    },
+  );
 
   void _advanceTaskDirectionally(
     String categoryName,
@@ -371,6 +371,12 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
           _advanceTaskDirectionally(payload['category'], payload['task'], -1);
         } else if (call.method == 'delete_task') {
           _deleteTask(payload['category'], payload['task']);
+        } else if (call.method == 'edit_task') {
+          _submitEditTask(
+            groupId,
+            KanbanTask(payload['oldTask']),
+            payload['newTask'],
+          );
         }
         return 'success';
       });
