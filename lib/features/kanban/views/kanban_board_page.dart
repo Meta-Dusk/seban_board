@@ -107,6 +107,20 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     }
   }
 
+  ThemeData _getCurrentTheme() {
+    final Brightness brightness = _themeMode == .system
+        ? MediaQuery.platformBrightnessOf(context)
+        : (_themeMode == .dark ? .dark : .light);
+
+    return ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _seedColor,
+        brightness: brightness,
+      ),
+      useMaterial3: true,
+    );
+  }
+
   // --- Kanban Logic Methods ---
   void _onItemReorder(
     int oldItemIndex,
@@ -160,36 +174,38 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   }
 
   void _promptDeleteCategory(String groupId) {
+    final theme = _getCurrentTheme();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Category?'),
-        content: const Text(
-          'Are you sure you want to delete this category and all of its tasks?',
+      builder: (context) => Theme(
+        data: theme,
+        child: AlertDialog(
+          title: const Text('Delete Category?'),
+          content: const Text(
+            'Are you sure you want to delete this category and all of its tasks?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() => categories.removeWhere((g) => g.id == groupId));
+                if (_activeCategoryWindows.containsKey(groupId)) {
+                  final windowIdStr = _activeCategoryWindows[groupId]!;
+                  final uniqueChannel = WindowMethodChannel(
+                    'kanban_sync_$windowIdStr',
+                  );
+                  uniqueChannel.invokeMethod('close_window');
+                  _activeCategoryWindows.remove(groupId);
+                }
+                Navigator.pop(context);
+              },
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() => categories.removeWhere((g) => g.id == groupId));
-
-              // Automatically assassinate the sticky note if it is currently open
-              if (_activeCategoryWindows.containsKey(groupId)) {
-                final windowIdStr = _activeCategoryWindows[groupId]!;
-                final uniqueChannel = WindowMethodChannel(
-                  'kanban_sync_$windowIdStr',
-                );
-                uniqueChannel.invokeMethod('close_window');
-                _activeCategoryWindows.remove(groupId);
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
       ),
     );
   }
@@ -216,40 +232,36 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     }
   }
 
-  void _promptDeleteTask(String groupId, KanbanTask task) => showDialog(
-    context: context,
-    builder: (context) {
-      final colorScheme = Theme.of(context).colorScheme;
-      return AlertDialog(
-        title: Text(
-          'Delete Task?',
-          style: TextStyle(color: colorScheme.onSurfaceVariant),
+  void _promptDeleteTask(String groupId, KanbanTask task) {
+    final theme = _getCurrentTheme();
+    showDialog(
+      context: context,
+      builder: (context) => Theme(
+        data: theme,
+        child: AlertDialog(
+          title: const Text('Delete Task?'),
+          content: Text('Are you sure you want to delete "${task.title}"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final group = categories.firstWhere((g) => g.id == groupId);
+                setState(() {
+                  group.items.removeWhere((t) => t.id == task.id);
+                });
+                _broadcastUpdate(groupId);
+                Navigator.pop(context);
+              },
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            ),
+          ],
         ),
-        content: Text(
-          'Are you sure you want to delete "${task.title}"?',
-          style: TextStyle(color: colorScheme.onSurface),
-        ),
-        backgroundColor: colorScheme.surfaceContainerHigh,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final group = categories.firstWhere((g) => g.id == groupId);
-              setState(() {
-                group.items.removeWhere((t) => t.id == task.id);
-              });
-              _broadcastUpdate(groupId);
-              Navigator.pop(context);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      );
-    },
-  );
+      ),
+    );
+  }
 
   void _advanceTaskDirectionally(
     String categoryName,
