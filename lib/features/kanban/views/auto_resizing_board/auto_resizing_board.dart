@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:drag_and_drop_lists/drag_and_drop_lists.dart';
-import 'package:seban_board/features/kanban/views/auto_resizing_board/header_widget.dart';
+
+import 'header_widget.dart';
 import '../../models/kanban_task.dart';
 
 class AutoResizingBoard extends StatefulWidget {
@@ -286,10 +289,25 @@ class _CardBuilderState extends State<_CardBuilder> {
                 ),
               ],
             ),
-            padding: const .all(16.0),
-            child: SizedBox(
-              width: double.infinity,
-              child: _isEditing ? textField : text,
+            padding: const .symmetric(horizontal: 16.0, vertical: 12.0),
+            child: Column(
+              crossAxisAlignment: .start,
+              mainAxisSize: .min,
+              children: [
+                if (widget.task.imagePath != null) ...[
+                  ClipRRect(
+                    borderRadius: .circular(4),
+                    child: widget.task.imagePath!.startsWith('assets/')
+                        ? Image.asset(widget.task.imagePath!, fit: .cover)
+                        : Image.file(File(widget.task.imagePath!), fit: .cover),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                SizedBox(
+                  width: double.infinity,
+                  child: _isEditing ? textField : text,
+                ),
+              ],
             ),
           ),
         ),

@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:seban_board/components/seed_color_selector.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+
+import 'package:seban_board/components/seed_color_selector.dart';
 
 class StickyNotePage extends StatefulWidget {
   final String windowId;
@@ -16,7 +19,7 @@ class StickyNotePage extends StatefulWidget {
 class _StickyNotePageState extends State<StickyNotePage> {
   late String groupId;
   late String title;
-  late List<String> items;
+  late List<Map<String, dynamic>> items;
   late bool isFirst;
   late bool isLast;
   late ThemeMode themeMode;
@@ -27,7 +30,7 @@ class _StickyNotePageState extends State<StickyNotePage> {
     super.initState();
     groupId = widget.data['id'] ?? '';
     title = widget.data['title'] ?? "Notes";
-    items = List<String>.from(widget.data['items'] ?? []);
+    items = List<Map<String, dynamic>>.from(widget.data['items'] ?? []);
     isFirst = widget.data['isFirst'] ?? false;
     isLast = widget.data['isLast'] ?? false;
 
@@ -44,7 +47,7 @@ class _StickyNotePageState extends State<StickyNotePage> {
         final payload = call.arguments as Map;
         setState(() {
           title = payload['title'];
-          items = List<String>.from(payload['items']);
+          items = List<Map<String, dynamic>>.from(payload['items']);
           isFirst = payload['isFirst'] ?? false;
           isLast = payload['isLast'] ?? false;
 
@@ -135,7 +138,7 @@ class StickyNoteWidget extends StatelessWidget {
   });
 
   final String title;
-  final List<String> items;
+  final List<Map<String, dynamic>> items;
   final String windowId;
   final bool isFirst;
   final bool isLast;
@@ -190,7 +193,7 @@ class _StickyNoteWidgetContent extends StatefulWidget {
   });
 
   final String title;
-  final List<String> items;
+  final List<Map<String, dynamic>> items;
   final String windowId;
   final bool isFirst;
   final bool isLast;
@@ -251,10 +254,12 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
         padding: const .all(12),
         itemCount: widget.items.length,
         itemBuilder: (context, index) {
-          final task = widget.items[index];
+          final taskData = widget.items[index];
+          final taskTitle = taskData['title'];
+          final taskImagePath = taskData['imagePath'] as String?;
 
           return Dismissible(
-            key: ValueKey(task),
+            key: ValueKey(taskTitle),
             direction: .horizontal,
             background: _SwipeBackground(
               color: widget.isLast ? Colors.redAccent : Colors.green,
@@ -270,12 +275,16 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
             ),
             confirmDismiss: (direction) async {
               if (direction == DismissDirection.startToEnd) {
-                if (widget.isLast) return await _promptDelete(context, task);
-                _invokeTaskAction(task, 'move_next');
+                if (widget.isLast) {
+                  return await _promptDelete(context, taskTitle);
+                }
+                _invokeTaskAction(taskTitle, 'move_next');
                 return true;
               } else {
-                if (widget.isFirst) return await _promptDelete(context, task);
-                _invokeTaskAction(task, 'move_prev');
+                if (widget.isFirst) {
+                  return await _promptDelete(context, taskTitle);
+                }
+                _invokeTaskAction(taskTitle, 'move_prev');
                 return true;
               }
             },
@@ -283,7 +292,8 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
               setState(() => widget.items.removeAt(index));
             },
             child: _InlineTaskItem(
-              taskTitle: task,
+              taskTitle: taskTitle,
+              imagePath: taskImagePath,
               colorScheme: colorScheme,
               onEditTask: _invokeTaskEdit,
             ),
@@ -296,11 +306,13 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
 
 class _InlineTaskItem extends StatefulWidget {
   final String taskTitle;
+  final String? imagePath;
   final ColorScheme colorScheme;
   final void Function(String oldTask, String newTask) onEditTask;
 
   const _InlineTaskItem({
     required this.taskTitle,
+    required this.imagePath,
     required this.colorScheme,
     required this.onEditTask,
   });
@@ -385,9 +397,24 @@ class _InlineTaskItemState extends State<_InlineTaskItem> {
       },
       child: Padding(
         padding: const .symmetric(vertical: 12.0, horizontal: 4.0),
-        child: SizedBox(
-          width: double.infinity,
-          child: _isEditing ? textField : text,
+        child: Column(
+          crossAxisAlignment: .start,
+          mainAxisSize: .min,
+          children: [
+            if (widget.imagePath != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: widget.imagePath!.startsWith('assets/')
+                    ? Image.asset(widget.imagePath!, fit: BoxFit.cover)
+                    : Image.file(File(widget.imagePath!), fit: BoxFit.cover),
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: _isEditing ? textField : text,
+            ),
+          ],
         ),
       ),
     );

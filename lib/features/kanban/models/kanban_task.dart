@@ -1,14 +1,20 @@
 class KanbanTask {
   final String title;
+  final String? imagePath;
 
-  KanbanTask(this.title);
+  KanbanTask(this.title, {this.imagePath});
 
   String get id => title;
 
-  Map<String, dynamic> toJson() => {'title': title};
+  Map<String, dynamic> toJson() => {
+    'title': title,
+    if (imagePath != null) 'imagePath': imagePath,
+  };
 
-  factory KanbanTask.fromJson(Map<String, dynamic> json) =>
-      KanbanTask(json['title'] as String);
+  factory KanbanTask.fromJson(Map<String, dynamic> json) => KanbanTask(
+    json['title'] as String,
+    imagePath: json['imagePath'] as String?,
+  );
 }
 
 class KanbanCategory {

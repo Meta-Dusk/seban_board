@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../models/kanban_task.dart';
 import 'custom_title_bar.dart';
@@ -18,7 +19,7 @@ class KanbanBoardPage extends StatefulWidget {
   State<KanbanBoardPage> createState() => _KanbanBoardPageState();
 }
 
-class _KanbanBoardPageState extends State<KanbanBoardPage> {
+class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
   final syncChannel = const WindowMethodChannel('kanban_sync');
   final Map<String, String> _activeCategoryWindows = {};
 
@@ -32,7 +33,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   Color _seedColor = Colors.blue;
 
   final int _targetMonth = 9;
-  final int _targetDay = 7;
+  final int _targetDay = 9;
 
   List<KanbanCategory> categories = [];
 
@@ -108,7 +109,9 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
         final surpriseCategory = KanbanCategory(
           id: 'seb_bday_${DateTime.now().millisecondsSinceEpoch}',
           name: 'To You',
-          items: [KanbanTask('Sampao')],
+          items: [
+            KanbanTask('Sampao', imagePath: 'assets/images/bday_cake.png'),
+          ],
         );
 
         categories.insert(i + 2, surpriseCategory);
@@ -127,6 +130,9 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   void initState() {
     super.initState();
 
+    windowManager.addListener(this);
+    _initCloseInterceptor();
+
     syncChannel.setMethodCallHandler((call) async {
       final payload = call.arguments as Map?;
       if (payload == null) return 'error';
@@ -142,6 +148,22 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     });
 
     _loadData();
+  }
+
+  Future<void> _initCloseInterceptor() async {
+    await windowManager.setPreventClose(true);
+  }
+
+  @override
+  void onWindowClose() async {
+    await _saveData();
+    await windowManager.destroy();
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
   }
 
   // --- LOCAL STORAGE ENGINE ---
@@ -512,7 +534,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       final payload = jsonEncode({
         'id': group.id,
         'title': group.name,
-        'items': group.items.map((item) => item.title).toList(),
+        'items': group.items.map((item) => item.toJson()).toList(),
         'isFirst': groupIndex == 0,
         'isLast': groupIndex == categories.length - 1,
         'themeMode': _themeMode.name,
