@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:seban_board/features/kanban/views/custom_title_bar.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../models/kanban_task.dart';
+import 'custom_title_bar.dart';
 import 'auto_resizing_board/auto_resizing_board.dart';
 
 class KanbanBoardPage extends StatefulWidget {
@@ -29,6 +33,43 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
 
   List<KanbanCategory> categories = [];
 
+  final _tutorialCategories = [
+    KanbanCategory(
+      id: 'welcome',
+      name: 'Welcome',
+      items: [
+        KanbanTask(
+          'Hi, welcome to SebanBoard! This is just a simple Kanban Board app '
+          'made initially for a friend of mine.',
+        ),
+      ],
+    ),
+    KanbanCategory(
+      id: 'tutorial',
+      name: 'Tutorial',
+      items: [
+        KanbanTask(
+          "Click the \"Add Task\" button below to add a task... "
+          "It's self-explanatory :)",
+        ),
+        KanbanTask(
+          "You can drag tasks around, and if you swipe on them,"
+          "you can either edit or delete them.",
+        ),
+        KanbanTask('You can simply edit all text by double-clicking them.'),
+        KanbanTask(
+          "Try adding a new category, by clicking the "
+          "'+' button at the top-right!",
+        ),
+        KanbanTask("You can also drag around the categories!"),
+        KanbanTask(
+          "And you can even resize the categories' width by clicking and "
+          "dragging the vertical bar ('|') in the header of the category.",
+        ),
+      ],
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -47,42 +88,106 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       return 'success';
     });
 
-    categories = [
-      KanbanCategory(
-        id: 'todo',
-        name: 'To Do',
-        items: [
-          KanbanTask('Design the "Twist"'),
-          KanbanTask('Add Themes (Such as dark mode)'),
-          KanbanTask('Add minimum size to all components'),
-          KanbanTask('Improve Title Bar'),
-        ],
-      ),
-      KanbanCategory(
-        id: 'progress',
-        name: 'In Progress',
-        items: [
-          KanbanTask('Update Kanban Board Architecture'),
-          KanbanTask('Clean Up Code'),
-        ],
-      ),
-      KanbanCategory(
-        id: 'done',
-        name: 'Done',
-        items: [
-          KanbanTask('Kanban Board'),
-          KanbanTask('Setup Multi-Window'),
-          KanbanTask('Sticky Note Feature'),
-          KanbanTask(
-            'Fix animation for tasks being transferred (visual transition bug?)',
+    _loadData();
+  }
+
+  // --- LOCAL STORAGE ENGINE ---
+
+  Future<File> _getSaveFile() async {
+    final directory = await getApplicationDocumentsDirectory();
+    // Creates a dedicated folder in the user's Documents
+    final path = Directory('${directory.path}\\SebanBoard');
+    if (!await path.exists()) {
+      await path.create();
+    }
+    return File('${path.path}\\kanban_data.json');
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final file = await _getSaveFile();
+      if (await file.exists()) {
+        final String contents = await file.readAsString();
+        final List<dynamic> jsonList = jsonDecode(contents);
+        setState(() {
+          categories = jsonList.map((c) => KanbanCategory.fromJson(c)).toList();
+        });
+      } else {
+        setState(() => categories = _tutorialCategories);
+      }
+    } catch (e) {
+      debugPrint("Error loading data: $e");
+    }
+  }
+
+  Future<void> _saveData() async {
+    try {
+      final file = await _getSaveFile();
+      final String jsonString = jsonEncode(
+        categories.map((c) => c.toJson()).toList(),
+      );
+      await file.writeAsString(jsonString);
+    } catch (e) {
+      debugPrint("Error saving data: $e");
+    }
+  }
+
+  // --- BACKUP ENGINE ---
+
+  Future<void> _exportBackup() async {
+    // Serialize the board state to a JSON string
+    final String jsonString = jsonEncode(
+      categories.map((c) => c.toJson()).toList(),
+    );
+
+    // Convert the string to raw bytes
+    final List<int> byteList = utf8.encode(jsonString);
+
+    final Uri? outputFile = await FilePicker.saveFile(
+      dialogTitle: 'Export Board Backup',
+      fileName: 'seban_board_backup.json',
+      bytes: Uint8List.fromList(byteList),
+    );
+
+    if (outputFile != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Backup exported successfully!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _importBackup() async {
+    final List<PlatformFile> files = await FilePicker.pickFiles(
+      dialogTitle: 'Import Board Backup',
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+
+    // Check if the user selected a file (empty list means they canceled)
+    if (files.isNotEmpty && files.first.path != null) {
+      final file = File(files.first.path!);
+      final String contents = await file.readAsString();
+      final List<dynamic> jsonList = jsonDecode(contents);
+
+      setState(() {
+        categories = jsonList.map((c) => KanbanCategory.fromJson(c)).toList();
+      });
+
+      await _saveData();
+      _broadcastAllUpdates();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Backup imported successfully!'),
+            duration: Duration(seconds: 2),
           ),
-          KanbanTask(
-            'Make tasks inside sticky notes be swipeable (transfer feature)',
-          ),
-          KanbanTask('Editable Categories'),
-        ],
-      ),
-    ];
+        );
+      }
+    }
   }
 
   /// Clamps the width so it can never crush the UI or expand infinitely
@@ -453,6 +558,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
           children: [
             CustomTitleBar(
               onAddCategory: _submitAddCategory,
+              onExportBackup: _exportBackup,
+              onImportBackup: _importBackup,
               currentMode: _themeMode,
               currentColor: _seedColor,
               onModeChanged: _updateThemeMode,

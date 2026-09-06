@@ -5,6 +5,8 @@ import 'package:window_manager/window_manager.dart';
 
 class CustomTitleBar extends StatelessWidget {
   final void Function(String categoryName) onAddCategory;
+  final VoidCallback onExportBackup;
+  final VoidCallback onImportBackup;
   final ThemeMode currentMode;
   final Color currentColor;
   final ValueChanged<ThemeMode> onModeChanged;
@@ -13,6 +15,8 @@ class CustomTitleBar extends StatelessWidget {
   const CustomTitleBar({
     super.key,
     required this.onAddCategory,
+    required this.onExportBackup,
+    required this.onImportBackup,
     required this.currentMode,
     required this.currentColor,
     required this.onModeChanged,
@@ -76,6 +80,30 @@ class CustomTitleBar extends StatelessWidget {
       style: TextStyle(fontWeight: .bold, color: theme.colorScheme.onSurface),
     );
 
+    final importButton = IconButton(
+      onPressed: onImportBackup,
+      icon: Icon(
+        Icons.file_download_outlined,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      tooltip: "Import Backup",
+      padding: const .symmetric(horizontal: 8),
+      constraints: const BoxConstraints(),
+    );
+
+    final exportButton = IconButton(
+      onPressed: onExportBackup,
+      icon: Icon(
+        Icons.file_upload_outlined,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      tooltip: "Export Backup",
+      padding: const .symmetric(horizontal: 8),
+      constraints: const BoxConstraints(),
+    );
+
     return DragToMoveArea(
       child: Container(
         height: 40,
@@ -88,7 +116,6 @@ class CustomTitleBar extends StatelessWidget {
           children: [
             titleText,
             Row(
-              // mainAxisSize: .min,
               children: [
                 ThemeModeSelector(
                   currentMode: currentMode,
@@ -99,11 +126,15 @@ class CustomTitleBar extends StatelessWidget {
                   currentColor: currentColor,
                   onColorChanged: onColorChanged,
                 ),
+                importButton,
+                exportButton,
+
                 divider,
                 _InlineAddCategoryButton(
                   onAddCategory: onAddCategory,
                   theme: theme,
                 ),
+
                 divider,
                 minimizeButton,
                 maximizeButton,

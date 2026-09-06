@@ -53,6 +53,34 @@ class _AutoResizingBoardState extends State<AutoResizingBoard> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
+    if (widget.categories.isEmpty) {
+      return Expanded(
+        child: Scrollbar(
+          controller: _scrollController,
+          thickness: 8.0,
+          radius: const .circular(8),
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            scrollDirection: .horizontal,
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Container(
+              // Forces the scroll view to stretch across the screen
+              width: MediaQuery.of(context).size.width,
+              alignment: Alignment.center,
+              child: Text(
+                "No categories yet. Click the '+' icon to add one!",
+                style: TextStyle(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  fontSize: 16,
+                  fontWeight: .w500,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final categoryList = widget.categories.map((category) {
       final categoryItemsList = category.items.map(
         (task) => DragAndDropItem(
