@@ -11,6 +11,8 @@ class CustomTitleBar extends StatelessWidget {
   final Color currentColor;
   final ValueChanged<ThemeMode> onModeChanged;
   final ValueChanged<Color> onColorChanged;
+  final bool isBirthday;
+  final VoidCallback onBirthdayTwist;
 
   const CustomTitleBar({
     super.key,
@@ -21,6 +23,8 @@ class CustomTitleBar extends StatelessWidget {
     required this.currentColor,
     required this.onModeChanged,
     required this.onColorChanged,
+    required this.isBirthday,
+    required this.onBirthdayTwist,
   });
 
   @override
@@ -104,6 +108,18 @@ class CustomTitleBar extends StatelessWidget {
       constraints: const BoxConstraints(),
     );
 
+    final bdayButton = IconButton(
+      onPressed: onBirthdayTwist,
+      icon: Icon(
+        Icons.card_giftcard,
+        size: 18,
+        color: theme.colorScheme.primary,
+      ),
+      tooltip: "A special surprise...",
+      padding: const .symmetric(horizontal: 8),
+      constraints: const BoxConstraints(),
+    );
+
     return DragToMoveArea(
       child: Container(
         height: 40,
@@ -126,6 +142,7 @@ class CustomTitleBar extends StatelessWidget {
                   currentColor: currentColor,
                   onColorChanged: onColorChanged,
                 ),
+                if (isBirthday) bdayButton,
                 importButton,
                 exportButton,
 

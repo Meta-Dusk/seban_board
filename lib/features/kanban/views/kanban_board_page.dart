@@ -31,6 +31,9 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   ThemeMode _themeMode = .system;
   Color _seedColor = Colors.blue;
 
+  final int _targetMonth = 9;
+  final int _targetDay = 7;
+
   List<KanbanCategory> categories = [];
 
   final _tutorialCategories = [
@@ -69,6 +72,56 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       ],
     ),
   ];
+
+  bool get _isBirthday {
+    final now = DateTime.now();
+    return now.month == _targetMonth && now.day == _targetDay;
+  }
+
+  void _triggerBirthdayTwist() {
+    bool twistActivated = false;
+
+    // Scan the board for the exact sequence
+    for (int i = 0; i < categories.length - 1; i++) {
+      final currentCategory = categories[i];
+      final nextCategory = categories[i + 1];
+      final currentName = currentCategory.name.trim().toLowerCase();
+      final nextName = nextCategory.name.trim().toLowerCase();
+
+      if (currentName == 'happy' && nextName == 'birthday') {
+        currentCategory.items.add(KanbanTask("Sebastian"));
+        _submitEditCategory(
+          currentCategory.id,
+          "${currentName[0].toUpperCase()}${currentName.substring(1)}",
+        );
+
+        nextCategory.items.add(KanbanTask("James"));
+        _submitEditCategory(
+          nextCategory.id,
+          "${nextName[0].toUpperCase()}${nextName.substring(1)}",
+        );
+
+        if (i + 2 < categories.length && categories[i + 2].name == 'To You') {
+          continue;
+        }
+
+        final surpriseCategory = KanbanCategory(
+          id: 'seb_bday_${DateTime.now().millisecondsSinceEpoch}',
+          name: 'To You',
+          items: [KanbanTask('Sampao')],
+        );
+
+        categories.insert(i + 2, surpriseCategory);
+        twistActivated = true;
+      }
+    }
+
+    if (twistActivated) {
+      setState(() {});
+      _saveData();
+      _broadcastAllUpdates(); // Push the new board state to all windows
+    }
+  }
 
   @override
   void initState() {
@@ -564,6 +617,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
               currentColor: _seedColor,
               onModeChanged: _updateThemeMode,
               onColorChanged: _updateSeedColor,
+              isBirthday: _isBirthday,
+              onBirthdayTwist: _triggerBirthdayTwist,
             ),
             AutoResizingBoard(
               categories: categories,
