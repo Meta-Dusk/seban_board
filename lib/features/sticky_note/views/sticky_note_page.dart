@@ -47,14 +47,16 @@ class _StickyNotePageState extends State<StickyNotePage> {
         final payload = call.arguments as Map;
         setState(() {
           title = payload['title'];
-          items = List<Map<String, dynamic>>.from(payload['items']);
+          items = (payload['items'] as List)
+              .map((item) => Map<String, dynamic>.from(item as Map))
+              .toList();
           isFirst = payload['isFirst'] ?? false;
           isLast = payload['isLast'] ?? false;
 
           final updatedModeStr = payload['themeMode'] ?? 'system';
           themeMode = ThemeMode.values.firstWhere(
             (e) => e.name == updatedModeStr,
-            orElse: () => ThemeMode.system,
+            orElse: () => .system,
           );
         });
       }
@@ -285,7 +287,7 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
               padding: const .only(right: 16),
             ),
             confirmDismiss: (direction) async {
-              if (direction == DismissDirection.startToEnd) {
+              if (direction == .startToEnd) {
                 if (widget.isLast) {
                   return await _promptDelete(context, taskTitle);
                 }
@@ -416,8 +418,8 @@ class _InlineTaskItemState extends State<_InlineTaskItem> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: widget.imagePath!.startsWith('assets/')
-                    ? Image.asset(widget.imagePath!, fit: BoxFit.cover)
-                    : Image.file(File(widget.imagePath!), fit: BoxFit.cover),
+                    ? Image.asset(widget.imagePath!, fit: .cover)
+                    : Image.file(File(widget.imagePath!), fit: .cover),
               ),
               const SizedBox(height: 8),
             ],

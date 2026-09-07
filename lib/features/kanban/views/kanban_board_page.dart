@@ -609,7 +609,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     final payload = {
       'id': group.id,
       'title': group.name,
-      'items': group.items.map((item) => item.title).toList(),
+      'items': group.items.map((item) => item.toJson()).toList(),
       'isFirst': groupIndex == 0,
       'isLast': groupIndex == categories.length - 1,
       'themeMode': _themeMode.name,

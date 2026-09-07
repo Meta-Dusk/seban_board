@@ -3,7 +3,7 @@
 
 #define MyAppName "Seban Board"
 #ifndef MyAppVersion
-#define MyAppVersion "0.4.8"
+#define MyAppVersion "0.4.9"
 #endif
 #define MyAppPublisher "MetaDusk Inc."
 #define MyAppURL "https://github.com/Meta-Dusk/seban_board"
