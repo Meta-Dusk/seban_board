@@ -4,6 +4,7 @@ class Assets {
   const Assets._();
 
   static const tasks = _PresetTasks();
+  static const categories = _PresetCategories();
   static const images = _Images();
 }
 
@@ -112,5 +113,48 @@ class _PresetTasks {
     KanbanTask('Chaeyoung', imagePath: 'assets/images/twice/chaeyoung.jpg'),
     KanbanTask('Mina', imagePath: 'assets/images/twice/mina.png'),
     KanbanTask('Dahyun', imagePath: 'assets/images/twice/dahyun.jpg'),
+  ];
+}
+
+class _PresetCategories {
+  const _PresetCategories();
+
+  final tutorials = _tutorials;
+
+  static const List<KanbanCategory> _tutorials = [
+    KanbanCategory(
+      id: 'welcome',
+      name: 'Welcome',
+      items: [
+        KanbanTask(
+          'Hi, welcome to SebanBoard! This is just a simple Kanban Board app '
+          'made initially for a friend of mine.',
+        ),
+      ],
+    ),
+    KanbanCategory(
+      id: 'tutorial',
+      name: 'Tutorial',
+      items: [
+        KanbanTask(
+          "Click the \"Add Task\" button below to add a task... "
+          "It's self-explanatory :)",
+        ),
+        KanbanTask(
+          "You can drag tasks around, and if you swipe on them,"
+          "you can either edit or delete them.",
+        ),
+        KanbanTask('You can simply edit all text by double-clicking them.'),
+        KanbanTask(
+          "Try adding a new category, by clicking the "
+          "'+' button at the top-right!",
+        ),
+        KanbanTask("You can also drag around the categories!"),
+        KanbanTask(
+          "And you can even resize the categories' width by clicking and "
+          "dragging the vertical bar ('|') in the header of the category.",
+        ),
+      ],
+    ),
   ];
 }
