@@ -25,6 +25,7 @@ class _PresetTasks {
   final babymonster = _babymonster;
   final katseye = _katseye;
   final twice = _twice;
+  final availableList = _availableList;
 
   static const List<KanbanTask> _aespa = [
     KanbanTask('Karina', imagePath: 'assets/images/aespa/karina.png'),
@@ -113,6 +114,21 @@ class _PresetTasks {
     KanbanTask('Chaeyoung', imagePath: 'assets/images/twice/chaeyoung.jpg'),
     KanbanTask('Mina', imagePath: 'assets/images/twice/mina.png'),
     KanbanTask('Dahyun', imagePath: 'assets/images/twice/dahyun.jpg'),
+  ];
+
+  static const List<KanbanTask> _availableList = [
+    KanbanTask(
+      'Looks like you found a secret feature! '
+      'There are a bunch more available preset lists. Try making another '
+      'category with one of the following names below:',
+    ),
+    KanbanTask('aespa'),
+    KanbanTask('le serrafim'),
+    KanbanTask('red velvet'),
+    KanbanTask('illit'),
+    KanbanTask('babymonster'),
+    KanbanTask('katseye'),
+    KanbanTask('twice'),
   ];
 }
 

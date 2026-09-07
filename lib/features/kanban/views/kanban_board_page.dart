@@ -307,6 +307,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
       'babymonster': Assets.tasks.babymonster,
       'katseye': Assets.tasks.katseye,
       'twice': Assets.tasks.twice,
+      '_list': Assets.tasks.availableList,
     };
     final presetTasks = presetMap[normalizedName];
     if (presetTasks != null) startingItems = presetTasks.toList();
