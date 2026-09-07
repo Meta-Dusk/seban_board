@@ -330,11 +330,57 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
 
   void _submitAddCategory(String categoryName) {
     final newGroupId = categoryName.toLowerCase().replaceAll(' ', '_');
+    final normalizedName = categoryName.trim().toLowerCase();
+
+    // Default to an empty list of tasks
+    List<KanbanTask> startingItems = [];
+
+    // Random shenanigans
+    if (normalizedName == 'aespa') {
+      startingItems = [
+        KanbanTask('Karina', imagePath: 'assets/images/aespa/karina.png'),
+        KanbanTask('Giselle', imagePath: 'assets/images/aespa/giselle.jpg'),
+        KanbanTask('Winter', imagePath: 'assets/images/aespa/winter.jpg'),
+        KanbanTask('Ningning', imagePath: 'assets/images/aespa/ningning.jpg'),
+      ];
+    } else if (normalizedName == 'le serrafim') {
+      startingItems = [
+        KanbanTask(
+          'Kim Chae-won',
+          imagePath: 'assets/images/le_serrafim/chaewon.jpg',
+        ),
+        KanbanTask('Kazuha', imagePath: 'assets/images/le_serrafim/kazuha.png'),
+        KanbanTask(
+          'Sakura Miyawaki',
+          imagePath: 'assets/images/le_serrafim/sakura.png',
+        ),
+        KanbanTask(
+          'Huh Yun-jin',
+          imagePath: 'assets/images/le_serrafim/yunjin.jpg',
+        ),
+        KanbanTask(
+          'Hong Eun-chae',
+          imagePath: 'assets/images/le_serrafim/eunchae.png',
+        ),
+        KanbanTask(
+          'Jun Ga-ram',
+          imagePath: 'assets/images/le_serrafim/kim.png',
+        ),
+      ];
+    }
+
     setState(() {
       categories.add(
-        KanbanCategory(id: newGroupId, name: categoryName, items: []),
+        KanbanCategory(
+          id: newGroupId,
+          name: categoryName,
+          items: startingItems,
+        ),
       );
     });
+
+    _saveData();
+    _broadcastAllUpdates();
   }
 
   void _submitEditCategory(String groupId, String newName) {
@@ -406,41 +452,59 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     final index = group.items.indexWhere((t) => t.id == oldTask.id);
     if (index != -1) {
       setState(() {
-        group.items[index] = KanbanTask(newTitle);
+        group.items[index] = KanbanTask(
+          newTitle,
+          imagePath: group.items[index].imagePath,
+        );
       });
+      _saveData();
       _broadcastUpdate(groupId);
     }
   }
 
-  void _promptDeleteTask(String groupId, KanbanTask task) {
+  Future<bool> _promptDeleteTask(String groupId, KanbanTask task) async {
     final theme = _getCurrentTheme();
-    showDialog(
+    final colorScheme = theme.colorScheme;
+
+    final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => Theme(
         data: theme,
         child: AlertDialog(
-          title: const Text('Delete Task?'),
-          content: Text('Are you sure you want to delete "${task.title}"?'),
+          title: Text(
+            'Delete Task?',
+            style: TextStyle(color: colorScheme.onSurfaceVariant),
+          ),
+          content: Text(
+            'Are you sure you want to delete "${task.title}"?',
+            style: TextStyle(color: colorScheme.onSurface),
+          ),
+          backgroundColor: colorScheme.surfaceContainerHigh,
           actions: [
+            // Return FALSE to cancel the swipe
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(context, false),
               child: const Text('Cancel'),
             ),
+            // Return TRUE to trigger the shrink animation
             TextButton(
-              onPressed: () {
-                final group = categories.firstWhere((g) => g.id == groupId);
-                setState(() {
-                  group.items.removeWhere((t) => t.id == task.id);
-                });
-                _broadcastUpdate(groupId);
-                Navigator.pop(context);
-              },
+              onPressed: () => Navigator.pop(context, true),
               child: const Text('Delete', style: TextStyle(color: Colors.red)),
             ),
           ],
         ),
       ),
     );
+    return confirm ?? false;
+  }
+
+  void _executeTaskDismissal(String groupId, KanbanTask task) {
+    final group = categories.firstWhere((g) => g.id == groupId);
+    setState(() {
+      group.items.removeWhere((t) => t.id == task.id);
+    });
+    _saveData();
+    _broadcastUpdate(groupId);
   }
 
   void _advanceTaskDirectionally(
@@ -651,7 +715,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
               onPopOutCategory: _handlePopOutCategory,
               onAddTask: _submitAddTask,
               onEditTask: _submitEditTask,
-              onDeleteTask: _promptDeleteTask,
+              onDeleteTaskPrompt: _promptDeleteTask,
+              onTaskDismissed: _executeTaskDismissal,
               onEditCategory: _submitEditCategory,
               onDeleteCategory: _promptDeleteCategory,
               isProcessing: _isWindowProcessing,

@@ -17,7 +17,8 @@ class AutoResizingBoard extends StatefulWidget {
     required this.onPopOutCategory,
     required this.onAddTask,
     required this.onEditTask,
-    required this.onDeleteTask,
+    required this.onDeleteTaskPrompt,
+    required this.onTaskDismissed,
     required this.onEditCategory,
     required this.onDeleteCategory,
     required this.isProcessing,
@@ -33,7 +34,9 @@ class AutoResizingBoard extends StatefulWidget {
   final void Function(String groupId, String taskTitle) onAddTask;
   final void Function(String groupId, KanbanTask task, String newTitle)
   onEditTask;
-  final void Function(String groupId, KanbanTask task) onDeleteTask;
+  final Future<bool> Function(String groupId, KanbanTask task)
+  onDeleteTaskPrompt;
+  final void Function(String groupId, KanbanTask task) onTaskDismissed;
   final void Function(String groupId, String newName) onEditCategory;
   final void Function(String groupId) onDeleteCategory;
   final bool isProcessing;
@@ -87,29 +90,37 @@ class _AutoResizingBoardState extends State<AutoResizingBoard> {
     final categoryList = widget.categories.map((category) {
       final categoryItemsList = category.items.map(
         (task) => DragAndDropItem(
-          child: _CardBuilder(
-            task: task,
-            groupId: category.id,
-            onEditTask: widget.onEditTask,
-            onDeleteTask: widget.onDeleteTask,
-            colorScheme: colorScheme,
+          child: _EntranceFader(
+            child: _CardBuilder(
+              task: task,
+              groupId: category.id,
+              onEditTask: widget.onEditTask,
+              onDeleteTaskPrompt: widget.onDeleteTaskPrompt,
+              onTaskDismissed: widget.onTaskDismissed,
+              colorScheme: colorScheme,
+            ),
           ),
         ),
       );
 
       return DragAndDropList(
-        header: HeaderWidget(
-          columnData: category,
-          processingGroupId: widget.processingGroupId,
-          isProcessing: widget.isProcessing,
-          onPopOutCategory: widget.onPopOutCategory,
-          onEditCategory: widget.onEditCategory,
-          onDeleteCategory: widget.onDeleteCategory,
-          onColumnResize: widget.onColumnResize,
-          colorScheme: colorScheme,
+        header: _EntranceFader(
+          child: HeaderWidget(
+            columnData: category,
+            processingGroupId: widget.processingGroupId,
+            isProcessing: widget.isProcessing,
+            onPopOutCategory: widget.onPopOutCategory,
+            onEditCategory: widget.onEditCategory,
+            onDeleteCategory: widget.onDeleteCategory,
+            onColumnResize: widget.onColumnResize,
+            colorScheme: colorScheme,
+          ),
         ),
-        footer: AddTaskButton(
-          onAddTask: (title) => widget.onAddTask(category.id, title),
+        footer: _EntranceFader(
+          child: AddTaskButton(
+            onAddTask: (title) => widget.onAddTask(category.id, title),
+            colorScheme: colorScheme,
+          ),
         ),
         children: categoryItemsList.toList(),
       );
@@ -170,7 +181,8 @@ class _CardBuilder extends StatefulWidget {
     required this.task,
     required this.groupId,
     required this.onEditTask,
-    required this.onDeleteTask,
+    required this.onDeleteTaskPrompt,
+    required this.onTaskDismissed,
     required this.colorScheme,
   });
 
@@ -178,7 +190,9 @@ class _CardBuilder extends StatefulWidget {
   final String groupId;
   final void Function(String groupId, KanbanTask task, String newTitle)
   onEditTask;
-  final void Function(String groupId, KanbanTask task) onDeleteTask;
+  final Future<bool> Function(String groupId, KanbanTask task)
+  onDeleteTaskPrompt;
+  final void Function(String groupId, KanbanTask task) onTaskDismissed;
   final ColorScheme colorScheme;
 
   @override
@@ -266,9 +280,11 @@ class _CardBuilderState extends State<_CardBuilder> {
             _focusNode.requestFocus();
             return false;
           } else {
-            widget.onDeleteTask(widget.groupId, widget.task);
-            return false;
+            return await widget.onDeleteTaskPrompt(widget.groupId, widget.task);
           }
+        },
+        onDismissed: (direction) {
+          widget.onTaskDismissed(widget.groupId, widget.task);
         },
         child: GestureDetector(
           onDoubleTap: () {
@@ -339,9 +355,14 @@ class _SwipeBackground extends StatelessWidget {
 }
 
 class AddTaskButton extends StatefulWidget {
-  const AddTaskButton({super.key, required this.onAddTask});
+  const AddTaskButton({
+    super.key,
+    required this.onAddTask,
+    required this.colorScheme,
+  });
 
   final void Function(String title) onAddTask;
+  final ColorScheme colorScheme;
 
   @override
   State<AddTaskButton> createState() => _AddTaskButtonState();
@@ -381,8 +402,7 @@ class _AddTaskButtonState extends State<AddTaskButton> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
+    final colorScheme = widget.colorScheme;
     if (_isEditing) {
       return Padding(
         padding: const .symmetric(horizontal: 16.0, vertical: 12.0),
@@ -426,4 +446,27 @@ class _AddTaskButtonState extends State<AddTaskButton> {
       ),
     );
   }
+}
+
+class _EntranceFader extends StatelessWidget {
+  final Widget child;
+  const _EntranceFader({required this.child});
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0.0, end: 1.0),
+    duration: const Duration(milliseconds: 300),
+    curve: Curves.easeOutCubic,
+    builder: (_, value, child) => Opacity(
+      opacity: value,
+      child: Transform.scale(
+        scale: 0.95 + (0.05 * value), // Slight scale up
+        child: Transform.translate(
+          offset: Offset(0, 10 * (1 - value)), // Slight slide up
+          child: child,
+        ),
+      ),
+    ),
+    child: child,
+  );
 }
