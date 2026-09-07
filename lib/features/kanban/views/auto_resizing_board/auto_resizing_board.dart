@@ -21,6 +21,7 @@ class AutoResizingBoard extends StatefulWidget {
     required this.onTaskDismissed,
     required this.onEditCategory,
     required this.onDeleteCategory,
+    required this.exitingGroupId,
     required this.isProcessing,
     required this.processingGroupId,
   });
@@ -39,6 +40,7 @@ class AutoResizingBoard extends StatefulWidget {
   final void Function(String groupId, KanbanTask task) onTaskDismissed;
   final void Function(String groupId, String newName) onEditCategory;
   final void Function(String groupId) onDeleteCategory;
+  final String? exitingGroupId;
   final bool isProcessing;
   final String? processingGroupId;
 
@@ -88,9 +90,12 @@ class _AutoResizingBoardState extends State<AutoResizingBoard> {
     }
 
     final categoryList = widget.categories.map((category) {
+      final bool isExiting = category.id == widget.exitingGroupId;
+
       final categoryItemsList = category.items.map(
         (task) => DragAndDropItem(
-          child: _EntranceFader(
+          child: _VisibilityFader(
+            isVisible: !isExiting,
             child: _CardBuilder(
               task: task,
               groupId: category.id,
@@ -104,7 +109,8 @@ class _AutoResizingBoardState extends State<AutoResizingBoard> {
       );
 
       return DragAndDropList(
-        header: _EntranceFader(
+        header: _VisibilityFader(
+          isVisible: !isExiting,
           child: HeaderWidget(
             columnData: category,
             processingGroupId: widget.processingGroupId,
@@ -116,7 +122,8 @@ class _AutoResizingBoardState extends State<AutoResizingBoard> {
             colorScheme: colorScheme,
           ),
         ),
-        footer: _EntranceFader(
+        footer: _VisibilityFader(
+          isVisible: !isExiting,
           child: AddTaskButton(
             onAddTask: (title) => widget.onAddTask(category.id, title),
             colorScheme: colorScheme,
@@ -448,25 +455,29 @@ class _AddTaskButtonState extends State<AddTaskButton> {
   }
 }
 
-class _EntranceFader extends StatelessWidget {
+class _VisibilityFader extends StatelessWidget {
   final Widget child;
-  const _EntranceFader({required this.child});
+  final bool isVisible;
+
+  const _VisibilityFader({required this.child, this.isVisible = true});
 
   @override
-  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
-    tween: Tween(begin: 0.0, end: 1.0),
-    duration: const Duration(milliseconds: 300),
-    curve: Curves.easeOutCubic,
-    builder: (_, value, child) => Opacity(
-      opacity: value,
-      child: Transform.scale(
-        scale: 0.95 + (0.05 * value), // Slight scale up
-        child: Transform.translate(
-          offset: Offset(0, 10 * (1 - value)), // Slight slide up
-          child: child,
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: isVisible ? 1.0 : 0.0),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+      builder: (_, value, child) => Opacity(
+        opacity: value.clamp(0.0, 1.0),
+        child: Transform.scale(
+          scale: 0.95 + (0.05 * value),
+          child: Transform.translate(
+            offset: Offset(0, 10 * (1 - value)),
+            child: child,
+          ),
         ),
       ),
-    ),
-    child: child,
-  );
+      child: child,
+    );
+  }
 }

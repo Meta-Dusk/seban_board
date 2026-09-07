@@ -25,6 +25,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
 
   bool _isWindowProcessing = false;
   String? _processingGroupId;
+  String? _exitingGroupId;
 
   double _columnWidth = 320.0;
   final double _minColumnWidth = 280.0;
@@ -416,8 +417,18 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () {
-                setState(() => categories.removeWhere((g) => g.id == groupId));
+              onPressed: () async {
+                Navigator.pop(context);
+                setState(() => _exitingGroupId = groupId);
+                await Future.delayed(const Duration(milliseconds: 300));
+
+                if (!mounted) return;
+
+                setState(() {
+                  categories.removeWhere((g) => g.id == groupId);
+                  _exitingGroupId = null;
+                });
+
                 if (_activeCategoryWindows.containsKey(groupId)) {
                   final windowIdStr = _activeCategoryWindows[groupId]!;
                   final uniqueChannel = WindowMethodChannel(
@@ -426,7 +437,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
                   uniqueChannel.invokeMethod('close_window');
                   _activeCategoryWindows.remove(groupId);
                 }
-                Navigator.pop(context);
+
+                _saveData();
               },
               child: const Text('Delete', style: TextStyle(color: Colors.red)),
             ),
@@ -719,6 +731,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
               onTaskDismissed: _executeTaskDismissal,
               onEditCategory: _submitEditCategory,
               onDeleteCategory: _promptDeleteCategory,
+              exitingGroupId: _exitingGroupId,
               isProcessing: _isWindowProcessing,
               processingGroupId: _processingGroupId,
             ),
