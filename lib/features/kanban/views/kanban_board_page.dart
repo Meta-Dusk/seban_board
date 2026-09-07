@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:seban_board/core/assets.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../models/kanban_task.dart';
@@ -110,9 +111,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
         final surpriseCategory = KanbanCategory(
           id: 'seb_bday_${DateTime.now().millisecondsSinceEpoch}',
           name: 'To You',
-          items: [
-            KanbanTask('Sampao', imagePath: 'assets/images/bday_cake.png'),
-          ],
+          items: [KanbanTask('Sampao', imagePath: Assets.images.bdayCake)],
         );
 
         categories.insert(i + 2, surpriseCategory);
@@ -337,38 +336,17 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     List<KanbanTask> startingItems = [];
 
     // Random shenanigans
-    if (normalizedName == 'aespa') {
-      startingItems = [
-        KanbanTask('Karina', imagePath: 'assets/images/aespa/karina.png'),
-        KanbanTask('Giselle', imagePath: 'assets/images/aespa/giselle.jpg'),
-        KanbanTask('Winter', imagePath: 'assets/images/aespa/winter.jpg'),
-        KanbanTask('Ningning', imagePath: 'assets/images/aespa/ningning.jpg'),
-      ];
-    } else if (normalizedName == 'le serrafim') {
-      startingItems = [
-        KanbanTask(
-          'Kim Chae-won',
-          imagePath: 'assets/images/le_serrafim/chaewon.jpg',
-        ),
-        KanbanTask('Kazuha', imagePath: 'assets/images/le_serrafim/kazuha.png'),
-        KanbanTask(
-          'Sakura Miyawaki',
-          imagePath: 'assets/images/le_serrafim/sakura.png',
-        ),
-        KanbanTask(
-          'Huh Yun-jin',
-          imagePath: 'assets/images/le_serrafim/yunjin.jpg',
-        ),
-        KanbanTask(
-          'Hong Eun-chae',
-          imagePath: 'assets/images/le_serrafim/eunchae.png',
-        ),
-        KanbanTask(
-          'Jun Ga-ram',
-          imagePath: 'assets/images/le_serrafim/kim.png',
-        ),
-      ];
-    }
+    final presetMap = {
+      'aespa': Assets.tasks.aespa,
+      'le serrafim': Assets.tasks.leSerrafim,
+      'red velvet': Assets.tasks.redVelvet,
+      'illit': Assets.tasks.illit,
+      'babymonster': Assets.tasks.babymonster,
+      'katseye': Assets.tasks.katseye,
+      'twice': Assets.tasks.twice,
+    };
+    final presetTasks = presetMap[normalizedName];
+    if (presetTasks != null) startingItems = presetTasks.toList();
 
     setState(() {
       categories.add(

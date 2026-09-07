@@ -2,7 +2,7 @@ class KanbanTask {
   final String title;
   final String? imagePath;
 
-  KanbanTask(this.title, {this.imagePath});
+  const KanbanTask(this.title, {this.imagePath});
 
   String get id => title;
 
