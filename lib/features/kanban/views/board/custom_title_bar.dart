@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:seban_board/components/seed_color_selector.dart';
-import 'package:seban_board/components/theme_mode_selector.dart';
 import 'package:window_manager/window_manager.dart';
+
+import '../../components/seed_color_selector.dart';
+import '../../components/theme_mode_selector.dart';
 
 class CustomTitleBar extends StatelessWidget {
   final void Function(String categoryName) onAddCategory;
@@ -12,7 +13,7 @@ class CustomTitleBar extends StatelessWidget {
   final ValueChanged<ThemeMode> onModeChanged;
   final ValueChanged<Color> onColorChanged;
   final bool isBirthday;
-  final VoidCallback onBirthdayTwist;
+  final VoidCallback onBirthday;
 
   const CustomTitleBar({
     super.key,
@@ -24,7 +25,7 @@ class CustomTitleBar extends StatelessWidget {
     required this.onModeChanged,
     required this.onColorChanged,
     required this.isBirthday,
-    required this.onBirthdayTwist,
+    required this.onBirthday,
   });
 
   @override
@@ -109,7 +110,7 @@ class CustomTitleBar extends StatelessWidget {
     );
 
     final bdayButton = IconButton(
-      onPressed: onBirthdayTwist,
+      onPressed: onBirthday,
       icon: Icon(
         Icons.card_giftcard,
         size: 18,

@@ -1,4 +1,4 @@
-import 'package:seban_board/features/kanban/models/kanban_task.dart';
+import '../../features/kanban/models/kanban.dart';
 
 class Assets {
   const Assets._();

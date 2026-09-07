@@ -1,15 +1,13 @@
-import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:seban_board/core/assets.dart';
+
 import 'package:window_manager/window_manager.dart';
 
-import '../models/kanban_task.dart';
+import 'package:seban_board/core/constants/assets.dart';
+import '../../mixins/category_trigger_mixin.dart';
+import '../../models/kanban.dart';
+import '../../services/birthday_service.dart';
+import '../../services/window_sync_service.dart';
+import '../../services/storage_service.dart';
 import 'custom_title_bar.dart';
 import 'auto_resizing_board/auto_resizing_board.dart';
 
@@ -20,9 +18,11 @@ class KanbanBoardPage extends StatefulWidget {
   State<KanbanBoardPage> createState() => _KanbanBoardPageState();
 }
 
-class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
-  final syncChannel = const WindowMethodChannel('kanban_sync');
-  final Map<String, String> _activeCategoryWindows = {};
+class _KanbanBoardPageState extends State<KanbanBoardPage>
+    with WindowListener, CategoryTriggerMixin {
+  final _storage = StorageService();
+  final _birthdayService = BirthdayService();
+  final _windowSync = WindowSyncService();
 
   bool _isWindowProcessing = false;
   String? _processingGroupId;
@@ -34,58 +34,18 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
   ThemeMode _themeMode = .system;
   Color _seedColor = Colors.blue;
 
-  final int _targetMonth = 9;
-  final int _targetDay = 9;
-
   List<KanbanCategory> categories = [];
 
-  bool get _isBirthday {
-    final now = DateTime.now();
-    return now.month == _targetMonth && now.day == _targetDay;
-  }
+  bool get _isBirthday => _birthdayService.isBirthday;
 
-  void _triggerBirthdayTwist() {
-    bool twistActivated = false;
+  void _triggerBirthday() {
+    // Pass the categories list directly to the service
+    final wasActivated = _birthdayService.applyBirthdayEvent(categories);
 
-    // Scan the board for the exact sequence
-    for (int i = 0; i < categories.length - 1; i++) {
-      final currentCategory = categories[i];
-      final nextCategory = categories[i + 1];
-      final currentName = currentCategory.name.trim().toLowerCase();
-      final nextName = nextCategory.name.trim().toLowerCase();
-
-      if (currentName == 'happy' && nextName == 'birthday') {
-        currentCategory.items.add(KanbanTask("Sebastian"));
-        _submitEditCategory(
-          currentCategory.id,
-          "${currentName[0].toUpperCase()}${currentName.substring(1)}",
-        );
-
-        nextCategory.items.add(KanbanTask("James"));
-        _submitEditCategory(
-          nextCategory.id,
-          "${nextName[0].toUpperCase()}${nextName.substring(1)}",
-        );
-
-        if (i + 2 < categories.length && categories[i + 2].name == 'To You') {
-          continue;
-        }
-
-        final surpriseCategory = KanbanCategory(
-          id: 'seb_bday_${DateTime.now().millisecondsSinceEpoch}',
-          name: 'To You',
-          items: [KanbanTask('Sampao', imagePath: Assets.images.bdayCake)],
-        );
-
-        categories.insert(i + 2, surpriseCategory);
-        twistActivated = true;
-      }
-    }
-
-    if (twistActivated) {
+    if (wasActivated) {
       setState(() {});
       _saveData();
-      _broadcastAllUpdates(); // Push the new board state to all windows
+      _broadcastAllUpdates();
     }
   }
 
@@ -96,19 +56,10 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     windowManager.addListener(this);
     _initCloseInterceptor();
 
-    syncChannel.setMethodCallHandler((call) async {
-      final payload = call.arguments as Map?;
-      if (payload == null) return 'error';
-
-      if (call.method == 'move_next') {
-        _advanceTaskDirectionally(payload['category'], payload['task'], 1);
-      } else if (call.method == 'move_prev') {
-        _advanceTaskDirectionally(payload['category'], payload['task'], -1);
-      } else if (call.method == 'delete_task') {
-        _deleteTask(payload['category'], payload['task']);
-      }
-      return 'success';
-    });
+    _windowSync.initMainListener(
+      onMoveTask: _advanceTaskDirectionally,
+      onDeleteTask: _deleteTask,
+    );
 
     _loadData();
   }
@@ -130,64 +81,18 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
   }
 
   // --- LOCAL STORAGE ENGINE ---
-
-  Future<File> _getSaveFile() async {
-    final directory = await getApplicationDocumentsDirectory();
-    // Creates a dedicated folder in the user's Documents
-    final path = Directory('${directory.path}\\SebanBoard');
-    if (!await path.exists()) {
-      await path.create();
-    }
-    return File('${path.path}\\kanban_data.json');
-  }
-
   Future<void> _loadData() async {
-    try {
-      final file = await _getSaveFile();
-      if (await file.exists()) {
-        final String contents = await file.readAsString();
-        final List<dynamic> jsonList = jsonDecode(contents);
-        setState(() {
-          categories = jsonList.map((c) => KanbanCategory.fromJson(c)).toList();
-        });
-      } else {
-        setState(() => categories = Assets.categories.tutorials);
-      }
-    } catch (e) {
-      debugPrint("Error loading data: $e");
-    }
+    final loadedCategories = await _storage.loadData();
+    setState(() {
+      categories = loadedCategories ?? Assets.categories.tutorials;
+    });
   }
 
-  Future<void> _saveData() async {
-    try {
-      final file = await _getSaveFile();
-      final String jsonString = jsonEncode(
-        categories.map((c) => c.toJson()).toList(),
-      );
-      await file.writeAsString(jsonString);
-    } catch (e) {
-      debugPrint("Error saving data: $e");
-    }
-  }
-
-  // --- BACKUP ENGINE ---
+  Future<void> _saveData() async => await _storage.saveData(categories);
 
   Future<void> _exportBackup() async {
-    // Serialize the board state to a JSON string
-    final String jsonString = jsonEncode(
-      categories.map((c) => c.toJson()).toList(),
-    );
-
-    // Convert the string to raw bytes
-    final List<int> byteList = utf8.encode(jsonString);
-
-    final Uri? outputFile = await FilePicker.saveFile(
-      dialogTitle: 'Export Board Backup',
-      fileName: 'seban_board_backup.json',
-      bytes: Uint8List.fromList(byteList),
-    );
-
-    if (outputFile != null && mounted) {
+    final success = await _storage.exportBackup(categories);
+    if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Backup exported successfully!'),
@@ -198,22 +103,9 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
   }
 
   Future<void> _importBackup() async {
-    final List<PlatformFile> files = await FilePicker.pickFiles(
-      dialogTitle: 'Import Board Backup',
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-    );
-
-    // Check if the user selected a file (empty list means they canceled)
-    if (files.isNotEmpty && files.first.path != null) {
-      final file = File(files.first.path!);
-      final String contents = await file.readAsString();
-      final List<dynamic> jsonList = jsonDecode(contents);
-
-      setState(() {
-        categories = jsonList.map((c) => KanbanCategory.fromJson(c)).toList();
-      });
-
+    final importedCategories = await _storage.importBackup();
+    if (importedCategories != null) {
+      setState(() => categories = importedCategories);
       await _saveData();
       _broadcastAllUpdates();
 
@@ -233,15 +125,15 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     _columnWidth = (_columnWidth + delta).clamp(_minColumnWidth, 800.0);
   });
 
-  // --- Theme Updaters ---
+  // --- THEME UPDATERS ---
   void _updateThemeMode(ThemeMode mode) {
     setState(() => _themeMode = mode);
-    _broadcastAllUpdates(); // Sync to sticky notes
+    _broadcastAllUpdates();
   }
 
   void _updateSeedColor(Color color) {
     setState(() => _seedColor = color);
-    _broadcastAllUpdates(); // Sync to sticky notes
+    _broadcastAllUpdates();
   }
 
   void _broadcastAllUpdates() {
@@ -264,7 +156,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     );
   }
 
-  // --- Kanban Logic Methods ---
+  // --- KANBAN LOGIC METHODS ---
   void _onItemReorder(
     int oldItemIndex,
     int oldListIndex,
@@ -290,27 +182,9 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
   }
 
   // --- CATEGORY CRUD METHODS ---
-
   void _submitAddCategory(String categoryName) {
     final newGroupId = categoryName.toLowerCase().replaceAll(' ', '_');
-    final normalizedName = categoryName.trim().toLowerCase();
-
-    // Default to an empty list of tasks
-    List<KanbanTask> startingItems = [];
-
-    // Random shenanigans
-    final presetMap = {
-      'aespa': Assets.tasks.aespa,
-      'le serrafim': Assets.tasks.leSerrafim,
-      'red velvet': Assets.tasks.redVelvet,
-      'illit': Assets.tasks.illit,
-      'babymonster': Assets.tasks.babymonster,
-      'katseye': Assets.tasks.katseye,
-      'twice': Assets.tasks.twice,
-      '_list': Assets.tasks.availableList,
-    };
-    final presetTasks = presetMap[normalizedName];
-    if (presetTasks != null) startingItems = presetTasks.toList();
+    final startingItems = getPresetTasksForCategory(categoryName);
 
     setState(() {
       categories.add(
@@ -346,52 +220,46 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     final theme = _getCurrentTheme();
     showDialog(
       context: context,
-      builder: (context) => Theme(
-        data: theme,
-        child: AlertDialog(
-          title: const Text('Delete Category?'),
-          content: const Text(
-            'Are you sure you want to delete this category and all of its tasks?',
+      builder: (context) {
+        final deleteButton = TextButton(
+          onPressed: () async {
+            Navigator.pop(context);
+            setState(() => _exitingGroupId = groupId);
+            await Future.delayed(const Duration(milliseconds: 300));
+
+            if (!mounted) return;
+
+            setState(() {
+              categories.removeWhere((g) => g.id == groupId);
+              _exitingGroupId = null;
+            });
+
+            _windowSync.closeWindow(groupId);
+            _saveData();
+          },
+          child: const Text('Delete', style: TextStyle(color: Colors.red)),
+        );
+
+        final cancelButton = TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        );
+
+        return Theme(
+          data: theme,
+          child: AlertDialog(
+            title: const Text('Delete Category?'),
+            content: const Text(
+              'Are you sure you want to delete this category and all of its tasks?',
+            ),
+            actions: [cancelButton, deleteButton],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                setState(() => _exitingGroupId = groupId);
-                await Future.delayed(const Duration(milliseconds: 300));
-
-                if (!mounted) return;
-
-                setState(() {
-                  categories.removeWhere((g) => g.id == groupId);
-                  _exitingGroupId = null;
-                });
-
-                if (_activeCategoryWindows.containsKey(groupId)) {
-                  final windowIdStr = _activeCategoryWindows[groupId]!;
-                  final uniqueChannel = WindowMethodChannel(
-                    'kanban_sync_$windowIdStr',
-                  );
-                  uniqueChannel.invokeMethod('close_window');
-                  _activeCategoryWindows.remove(groupId);
-                }
-
-                _saveData();
-              },
-              child: const Text('Delete', style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        ),
-      ),
+        );
+      },
     );
   }
 
   // --- TASK CRUD METHODS ---
-
   void _submitAddTask(String groupId, String taskTitle) {
     final group = categories.firstWhere((g) => g.id == groupId);
     setState(() {
@@ -496,6 +364,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     _broadcastUpdate(group.id);
   }
 
+  // --- STICKY NOTE METHODS ---
   void _renameCategoryFromSticky(String groupId, String newName) {
     final groupIndex = categories.indexWhere((g) => g.id == groupId);
     if (groupIndex != -1) {
@@ -512,12 +381,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
 
   void _deleteCategoryFromSticky(String groupId) {
     setState(() => categories.removeWhere((g) => g.id == groupId));
-    if (_activeCategoryWindows.containsKey(groupId)) {
-      final windowIdStr = _activeCategoryWindows[groupId]!;
-      final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
-      uniqueChannel.invokeMethod('close_window');
-      _activeCategoryWindows.remove(groupId);
-    }
+    _windowSync.closeWindow(groupId);
+    _saveData();
   }
 
   Future<void> _handlePopOutCategory(KanbanCategory columnData) async {
@@ -525,7 +390,6 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
 
     final groupId = columnData.id;
     final groupIndex = categories.indexWhere((g) => g.id == groupId);
-    final group = categories[groupIndex];
 
     setState(() {
       _isWindowProcessing = true;
@@ -533,63 +397,18 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     });
 
     try {
-      if (_activeCategoryWindows.containsKey(groupId)) {
-        final windowIdStr = _activeCategoryWindows[groupId]!;
-        final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
-
-        bool closeSuccess = false;
-        try {
-          await uniqueChannel.invokeMethod('close_window');
-          closeSuccess = true;
-        } catch (_) {
-          debugPrint('Window was already dead.');
-        }
-
-        _activeCategoryWindows.remove(groupId);
-        if (closeSuccess) return;
-      }
-
-      final payload = jsonEncode({
-        'id': group.id,
-        'title': group.name,
-        'items': group.items.map((item) => item.toJson()).toList(),
-        'isFirst': groupIndex == 0,
-        'isLast': groupIndex == categories.length - 1,
-        'themeMode': _themeMode.name,
-        'seedColor': _seedColor.toARGB32(),
-      });
-
-      final window = await WindowController.create(
-        WindowConfiguration(hiddenAtLaunch: true, arguments: payload),
+      await _windowSync.toggleStickyNote(
+        group: categories[groupIndex],
+        groupIndex: groupIndex,
+        totalGroups: categories.length,
+        themeModeName: _themeMode.name,
+        seedColorValue: _seedColor.toARGB32(),
+        onRenameCategory: _renameCategoryFromSticky,
+        onDeleteCategory: _deleteCategoryFromSticky,
+        onMoveTask: _advanceTaskDirectionally,
+        onDeleteTask: _deleteTask,
+        onEditTask: _submitEditTask,
       );
-
-      final windowId = window.windowId;
-      _activeCategoryWindows[groupId] = windowId.toString();
-
-      final uniqueChannel = WindowMethodChannel('kanban_sync_$windowId');
-      uniqueChannel.setMethodCallHandler((call) async {
-        final payload = call.arguments as Map?;
-        if (payload == null) return 'error';
-
-        if (call.method == 'rename_category') {
-          _renameCategoryFromSticky(groupId, payload['newName']);
-        } else if (call.method == 'delete_category') {
-          _deleteCategoryFromSticky(groupId);
-        } else if (call.method == 'move_next') {
-          _advanceTaskDirectionally(payload['category'], payload['task'], 1);
-        } else if (call.method == 'move_prev') {
-          _advanceTaskDirectionally(payload['category'], payload['task'], -1);
-        } else if (call.method == 'delete_task') {
-          _deleteTask(payload['category'], payload['task']);
-        } else if (call.method == 'edit_task') {
-          _submitEditTask(
-            groupId,
-            KanbanTask(payload['oldTask']),
-            payload['newTask'],
-          );
-        }
-        return 'success';
-      });
     } finally {
       await Future.delayed(const Duration(milliseconds: 400));
       if (mounted) {
@@ -601,31 +420,17 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
     }
   }
 
-  void _broadcastUpdate(String groupId) async {
+  void _broadcastUpdate(String groupId) {
     final groupIndex = categories.indexWhere((g) => g.id == groupId);
     if (groupIndex == -1) return;
-    final group = categories[groupIndex];
 
-    final payload = {
-      'id': group.id,
-      'title': group.name,
-      'items': group.items.map((item) => item.title).toList(),
-      'isFirst': groupIndex == 0,
-      'isLast': groupIndex == categories.length - 1,
-      'themeMode': _themeMode.name,
-      'seedColor': _seedColor.toARGB32(),
-    };
-
-    // ONLY send the update to this specific category's window
-    if (_activeCategoryWindows.containsKey(groupId)) {
-      final windowIdStr = _activeCategoryWindows[groupId]!;
-      try {
-        final uniqueChannel = WindowMethodChannel('kanban_sync_$windowIdStr');
-        await uniqueChannel.invokeMethod('update_category', payload);
-      } catch (e) {
-        debugPrint('Sticky note $windowIdStr not listening: $e');
-      }
-    }
+    _windowSync.broadcastUpdate(
+      group: categories[groupIndex],
+      groupIndex: groupIndex,
+      totalGroups: categories.length,
+      themeModeName: _themeMode.name,
+      seedColorValue: _seedColor.toARGB32(),
+    );
   }
 
   @override
@@ -658,7 +463,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
               onModeChanged: _updateThemeMode,
               onColorChanged: _updateSeedColor,
               isBirthday: _isBirthday,
-              onBirthdayTwist: _triggerBirthdayTwist,
+              onBirthday: _triggerBirthday,
             ),
             AutoResizingBoard(
               categories: categories,
