@@ -109,15 +109,26 @@ class _StickyNotePageState extends State<StickyNotePage> {
       data: theme,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: StickyNoteWidget(
-          title: title,
-          items: items,
-          windowId: widget.windowId,
-          isFirst: isFirst,
-          isLast: isLast,
-          currentColor: localSeedColor,
-          onEditCategory: _submitRename,
-          onColorChanged: (color) => setState(() => localSeedColor = color),
+        body: Stack(
+          children: [
+            StickyNoteWidget(
+              title: title,
+              items: items,
+              windowId: widget.windowId,
+              isFirst: isFirst,
+              isLast: isLast,
+              currentColor: localSeedColor,
+              onEditCategory: _submitRename,
+              onColorChanged: (color) => setState(() => localSeedColor = color),
+            ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: _ResizeHandle(
+                iconColor: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -575,4 +586,30 @@ class _DraggableStickyNoteTitleBarState
       ),
     );
   }
+}
+
+class _ResizeHandle extends StatelessWidget {
+  final Color iconColor;
+
+  const _ResizeHandle({required this.iconColor});
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: SystemMouseCursors.resizeUpLeftDownRight,
+    child: GestureDetector(
+      // Trigger the native OS window resize behavior
+      onPanStart: (details) {
+        windowManager.startResizing(.bottomRight);
+      },
+      child: Container(
+        color: Colors.transparent,
+        padding: const .all(4.0),
+        child: Icon(
+          Icons.zoom_out_map,
+          size: 16,
+          color: iconColor.withValues(alpha: 0.5),
+        ),
+      ),
+    ),
+  );
 }
