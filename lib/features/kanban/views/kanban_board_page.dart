@@ -39,43 +39,6 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
 
   List<KanbanCategory> categories = [];
 
-  final _tutorialCategories = [
-    KanbanCategory(
-      id: 'welcome',
-      name: 'Welcome',
-      items: [
-        KanbanTask(
-          'Hi, welcome to SebanBoard! This is just a simple Kanban Board app '
-          'made initially for a friend of mine.',
-        ),
-      ],
-    ),
-    KanbanCategory(
-      id: 'tutorial',
-      name: 'Tutorial',
-      items: [
-        KanbanTask(
-          "Click the \"Add Task\" button below to add a task... "
-          "It's self-explanatory :)",
-        ),
-        KanbanTask(
-          "You can drag tasks around, and if you swipe on them,"
-          "you can either edit or delete them.",
-        ),
-        KanbanTask('You can simply edit all text by double-clicking them.'),
-        KanbanTask(
-          "Try adding a new category, by clicking the "
-          "'+' button at the top-right!",
-        ),
-        KanbanTask("You can also drag around the categories!"),
-        KanbanTask(
-          "And you can even resize the categories' width by clicking and "
-          "dragging the vertical bar ('|') in the header of the category.",
-        ),
-      ],
-    ),
-  ];
-
   bool get _isBirthday {
     final now = DateTime.now();
     return now.month == _targetMonth && now.day == _targetDay;
@@ -188,7 +151,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
           categories = jsonList.map((c) => KanbanCategory.fromJson(c)).toList();
         });
       } else {
-        setState(() => categories = _tutorialCategories);
+        setState(() => categories = Assets.categories.tutorials);
       }
     } catch (e) {
       debugPrint("Error loading data: $e");
@@ -344,6 +307,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
       'babymonster': Assets.tasks.babymonster,
       'katseye': Assets.tasks.katseye,
       'twice': Assets.tasks.twice,
+      '_list': Assets.tasks.availableList,
     };
     final presetTasks = presetMap[normalizedName];
     if (presetTasks != null) startingItems = presetTasks.toList();

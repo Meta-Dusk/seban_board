@@ -22,7 +22,11 @@ class KanbanCategory {
   final String name;
   final List<KanbanTask> items;
 
-  KanbanCategory({required this.id, required this.name, required this.items});
+  const KanbanCategory({
+    required this.id,
+    required this.name,
+    required this.items,
+  });
 
   Map<String, dynamic> toJson() => {
     'id': id,
