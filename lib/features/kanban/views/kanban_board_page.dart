@@ -1,11 +1,17 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:seban_board/features/kanban/views/custom_title_bar.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:seban_board/core/assets.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../models/kanban_task.dart';
-import 'auto_resizing_board.dart';
+import 'custom_title_bar.dart';
+import 'auto_resizing_board/auto_resizing_board.dart';
 
 class KanbanBoardPage extends StatefulWidget {
   const KanbanBoardPage({super.key});
@@ -14,12 +20,13 @@ class KanbanBoardPage extends StatefulWidget {
   State<KanbanBoardPage> createState() => _KanbanBoardPageState();
 }
 
-class _KanbanBoardPageState extends State<KanbanBoardPage> {
+class _KanbanBoardPageState extends State<KanbanBoardPage> with WindowListener {
   final syncChannel = const WindowMethodChannel('kanban_sync');
   final Map<String, String> _activeCategoryWindows = {};
 
   bool _isWindowProcessing = false;
   String? _processingGroupId;
+  String? _exitingGroupId;
 
   double _columnWidth = 320.0;
   final double _minColumnWidth = 280.0;
@@ -27,11 +34,104 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
   ThemeMode _themeMode = .system;
   Color _seedColor = Colors.blue;
 
+  final int _targetMonth = 9;
+  final int _targetDay = 9;
+
   List<KanbanCategory> categories = [];
+
+  final _tutorialCategories = [
+    KanbanCategory(
+      id: 'welcome',
+      name: 'Welcome',
+      items: [
+        KanbanTask(
+          'Hi, welcome to SebanBoard! This is just a simple Kanban Board app '
+          'made initially for a friend of mine.',
+        ),
+      ],
+    ),
+    KanbanCategory(
+      id: 'tutorial',
+      name: 'Tutorial',
+      items: [
+        KanbanTask(
+          "Click the \"Add Task\" button below to add a task... "
+          "It's self-explanatory :)",
+        ),
+        KanbanTask(
+          "You can drag tasks around, and if you swipe on them,"
+          "you can either edit or delete them.",
+        ),
+        KanbanTask('You can simply edit all text by double-clicking them.'),
+        KanbanTask(
+          "Try adding a new category, by clicking the "
+          "'+' button at the top-right!",
+        ),
+        KanbanTask("You can also drag around the categories!"),
+        KanbanTask(
+          "And you can even resize the categories' width by clicking and "
+          "dragging the vertical bar ('|') in the header of the category.",
+        ),
+      ],
+    ),
+  ];
+
+  bool get _isBirthday {
+    final now = DateTime.now();
+    return now.month == _targetMonth && now.day == _targetDay;
+  }
+
+  void _triggerBirthdayTwist() {
+    bool twistActivated = false;
+
+    // Scan the board for the exact sequence
+    for (int i = 0; i < categories.length - 1; i++) {
+      final currentCategory = categories[i];
+      final nextCategory = categories[i + 1];
+      final currentName = currentCategory.name.trim().toLowerCase();
+      final nextName = nextCategory.name.trim().toLowerCase();
+
+      if (currentName == 'happy' && nextName == 'birthday') {
+        currentCategory.items.add(KanbanTask("Sebastian"));
+        _submitEditCategory(
+          currentCategory.id,
+          "${currentName[0].toUpperCase()}${currentName.substring(1)}",
+        );
+
+        nextCategory.items.add(KanbanTask("James"));
+        _submitEditCategory(
+          nextCategory.id,
+          "${nextName[0].toUpperCase()}${nextName.substring(1)}",
+        );
+
+        if (i + 2 < categories.length && categories[i + 2].name == 'To You') {
+          continue;
+        }
+
+        final surpriseCategory = KanbanCategory(
+          id: 'seb_bday_${DateTime.now().millisecondsSinceEpoch}',
+          name: 'To You',
+          items: [KanbanTask('Sampao', imagePath: Assets.images.bdayCake)],
+        );
+
+        categories.insert(i + 2, surpriseCategory);
+        twistActivated = true;
+      }
+    }
+
+    if (twistActivated) {
+      setState(() {});
+      _saveData();
+      _broadcastAllUpdates(); // Push the new board state to all windows
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+
+    windowManager.addListener(this);
+    _initCloseInterceptor();
 
     syncChannel.setMethodCallHandler((call) async {
       final payload = call.arguments as Map?;
@@ -47,42 +147,122 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       return 'success';
     });
 
-    categories = [
-      KanbanCategory(
-        id: 'todo',
-        name: 'To Do',
-        items: [
-          KanbanTask('Design the "Twist"'),
-          KanbanTask('Add Themes (Such as dark mode)'),
-          KanbanTask('Add minimum size to all components'),
-          KanbanTask('Improve Title Bar'),
-        ],
-      ),
-      KanbanCategory(
-        id: 'progress',
-        name: 'In Progress',
-        items: [
-          KanbanTask('Update Kanban Board Architecture'),
-          KanbanTask('Clean Up Code'),
-        ],
-      ),
-      KanbanCategory(
-        id: 'done',
-        name: 'Done',
-        items: [
-          KanbanTask('Kanban Board'),
-          KanbanTask('Setup Multi-Window'),
-          KanbanTask('Sticky Note Feature'),
-          KanbanTask(
-            'Fix animation for tasks being transferred (visual transition bug?)',
+    _loadData();
+  }
+
+  Future<void> _initCloseInterceptor() async {
+    await windowManager.setPreventClose(true);
+  }
+
+  @override
+  void onWindowClose() async {
+    await _saveData();
+    await windowManager.destroy();
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  // --- LOCAL STORAGE ENGINE ---
+
+  Future<File> _getSaveFile() async {
+    final directory = await getApplicationDocumentsDirectory();
+    // Creates a dedicated folder in the user's Documents
+    final path = Directory('${directory.path}\\SebanBoard');
+    if (!await path.exists()) {
+      await path.create();
+    }
+    return File('${path.path}\\kanban_data.json');
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final file = await _getSaveFile();
+      if (await file.exists()) {
+        final String contents = await file.readAsString();
+        final List<dynamic> jsonList = jsonDecode(contents);
+        setState(() {
+          categories = jsonList.map((c) => KanbanCategory.fromJson(c)).toList();
+        });
+      } else {
+        setState(() => categories = _tutorialCategories);
+      }
+    } catch (e) {
+      debugPrint("Error loading data: $e");
+    }
+  }
+
+  Future<void> _saveData() async {
+    try {
+      final file = await _getSaveFile();
+      final String jsonString = jsonEncode(
+        categories.map((c) => c.toJson()).toList(),
+      );
+      await file.writeAsString(jsonString);
+    } catch (e) {
+      debugPrint("Error saving data: $e");
+    }
+  }
+
+  // --- BACKUP ENGINE ---
+
+  Future<void> _exportBackup() async {
+    // Serialize the board state to a JSON string
+    final String jsonString = jsonEncode(
+      categories.map((c) => c.toJson()).toList(),
+    );
+
+    // Convert the string to raw bytes
+    final List<int> byteList = utf8.encode(jsonString);
+
+    final Uri? outputFile = await FilePicker.saveFile(
+      dialogTitle: 'Export Board Backup',
+      fileName: 'seban_board_backup.json',
+      bytes: Uint8List.fromList(byteList),
+    );
+
+    if (outputFile != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Backup exported successfully!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _importBackup() async {
+    final List<PlatformFile> files = await FilePicker.pickFiles(
+      dialogTitle: 'Import Board Backup',
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+
+    // Check if the user selected a file (empty list means they canceled)
+    if (files.isNotEmpty && files.first.path != null) {
+      final file = File(files.first.path!);
+      final String contents = await file.readAsString();
+      final List<dynamic> jsonList = jsonDecode(contents);
+
+      setState(() {
+        categories = jsonList.map((c) => KanbanCategory.fromJson(c)).toList();
+      });
+
+      await _saveData();
+      _broadcastAllUpdates();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Backup imported successfully!'),
+            duration: Duration(seconds: 2),
           ),
-          KanbanTask(
-            'Make tasks inside sticky notes be swipeable (transfer feature)',
-          ),
-          KanbanTask('Editable Categories'),
-        ],
-      ),
-    ];
+        );
+      }
+    }
   }
 
   /// Clamps the width so it can never crush the UI or expand infinitely
@@ -105,6 +285,20 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
     for (KanbanCategory group in categories) {
       _broadcastUpdate(group.id);
     }
+  }
+
+  ThemeData _getCurrentTheme() {
+    final Brightness brightness = _themeMode == .system
+        ? MediaQuery.platformBrightnessOf(context)
+        : (_themeMode == .dark ? .dark : .light);
+
+    return ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: _seedColor,
+        brightness: brightness,
+      ),
+      useMaterial3: true,
+    );
   }
 
   // --- Kanban Logic Methods ---
@@ -134,152 +328,173 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
 
   // --- CATEGORY CRUD METHODS ---
 
-  void _promptAddCategory() {
-    _showInputDialog('New Category', (input) {
-      final newGroupId = input.toLowerCase().replaceAll(' ', '_');
-      setState(() {
-        categories.add(KanbanCategory(id: newGroupId, name: input, items: []));
-      });
+  void _submitAddCategory(String categoryName) {
+    final newGroupId = categoryName.toLowerCase().replaceAll(' ', '_');
+    final normalizedName = categoryName.trim().toLowerCase();
+
+    // Default to an empty list of tasks
+    List<KanbanTask> startingItems = [];
+
+    // Random shenanigans
+    final presetMap = {
+      'aespa': Assets.tasks.aespa,
+      'le serrafim': Assets.tasks.leSerrafim,
+      'red velvet': Assets.tasks.redVelvet,
+      'illit': Assets.tasks.illit,
+      'babymonster': Assets.tasks.babymonster,
+      'katseye': Assets.tasks.katseye,
+      'twice': Assets.tasks.twice,
+    };
+    final presetTasks = presetMap[normalizedName];
+    if (presetTasks != null) startingItems = presetTasks.toList();
+
+    setState(() {
+      categories.add(
+        KanbanCategory(
+          id: newGroupId,
+          name: categoryName,
+          items: startingItems,
+        ),
+      );
     });
+
+    _saveData();
+    _broadcastAllUpdates();
   }
 
-  void _promptEditCategory(String groupId, String currentName) {
-    _showInputDialog('Rename Category', (input) {
-      final groupIndex = categories.indexWhere((g) => g.id == groupId);
-      if (groupIndex != -1) {
-        setState(() {
-          // Rebuild the category with the new name to ensure immutability is respected
-          final oldGroup = categories[groupIndex];
-          categories[groupIndex] = KanbanCategory(
-            id: oldGroup.id,
-            name: input,
-            items: oldGroup.items,
-          );
-        });
-        _broadcastUpdate(groupId);
-      }
-    }, initialText: currentName);
+  void _submitEditCategory(String groupId, String newName) {
+    if (newName.trim().isEmpty) return;
+    final groupIndex = categories.indexWhere((g) => g.id == groupId);
+    if (groupIndex != -1) {
+      setState(() {
+        final oldGroup = categories[groupIndex];
+        categories[groupIndex] = KanbanCategory(
+          id: oldGroup.id,
+          name: newName,
+          items: oldGroup.items,
+        );
+      });
+      _broadcastUpdate(groupId);
+    }
   }
 
   void _promptDeleteCategory(String groupId) {
+    final theme = _getCurrentTheme();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Category?'),
-        content: const Text(
-          'Are you sure you want to delete this category and all of its tasks?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+      builder: (context) => Theme(
+        data: theme,
+        child: AlertDialog(
+          title: const Text('Delete Category?'),
+          content: const Text(
+            'Are you sure you want to delete this category and all of its tasks?',
           ),
-          TextButton(
-            onPressed: () {
-              setState(() => categories.removeWhere((g) => g.id == groupId));
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                setState(() => _exitingGroupId = groupId);
+                await Future.delayed(const Duration(milliseconds: 300));
 
-              // Automatically assassinate the sticky note if it is currently open
-              if (_activeCategoryWindows.containsKey(groupId)) {
-                final windowIdStr = _activeCategoryWindows[groupId]!;
-                final uniqueChannel = WindowMethodChannel(
-                  'kanban_sync_$windowIdStr',
-                );
-                uniqueChannel.invokeMethod('close_window');
-                _activeCategoryWindows.remove(groupId);
-              }
-              Navigator.pop(context);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
+                if (!mounted) return;
+
+                setState(() {
+                  categories.removeWhere((g) => g.id == groupId);
+                  _exitingGroupId = null;
+                });
+
+                if (_activeCategoryWindows.containsKey(groupId)) {
+                  final windowIdStr = _activeCategoryWindows[groupId]!;
+                  final uniqueChannel = WindowMethodChannel(
+                    'kanban_sync_$windowIdStr',
+                  );
+                  uniqueChannel.invokeMethod('close_window');
+                  _activeCategoryWindows.remove(groupId);
+                }
+
+                _saveData();
+              },
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   // --- TASK CRUD METHODS ---
 
-  void _promptAddTask(String groupId) {
-    _showInputDialog('New Task', (input) {
-      final group = categories.firstWhere((g) => g.id == groupId);
-      setState(() {
-        group.items.add(KanbanTask(input));
-      });
-      _broadcastUpdate(groupId);
+  void _submitAddTask(String groupId, String taskTitle) {
+    final group = categories.firstWhere((g) => g.id == groupId);
+    setState(() {
+      group.items.add(KanbanTask(taskTitle));
     });
+    _broadcastUpdate(groupId);
   }
 
-  void _promptEditTask(String groupId, KanbanTask oldTask) {
-    _showInputDialog('Edit Task', (input) {
-      final group = categories.firstWhere((g) => g.id == groupId);
-      final index = group.items.indexWhere((t) => t.id == oldTask.id);
-      if (index != -1) {
-        setState(() {
-          group.items[index] = KanbanTask(input);
-        });
-        _broadcastUpdate(groupId);
-      }
-    }, initialText: oldTask.title);
+  void _submitEditTask(String groupId, KanbanTask oldTask, String newTitle) {
+    if (newTitle.trim().isEmpty) return;
+    final group = categories.firstWhere((g) => g.id == groupId);
+    final index = group.items.indexWhere((t) => t.id == oldTask.id);
+    if (index != -1) {
+      setState(() {
+        group.items[index] = KanbanTask(
+          newTitle,
+          imagePath: group.items[index].imagePath,
+        );
+      });
+      _saveData();
+      _broadcastUpdate(groupId);
+    }
   }
 
-  void _promptDeleteTask(String groupId, KanbanTask task) {
-    showDialog(
+  Future<bool> _promptDeleteTask(String groupId, KanbanTask task) async {
+    final theme = _getCurrentTheme();
+    final colorScheme = theme.colorScheme;
+
+    final bool? confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Task?'),
-        content: Text('Are you sure you want to delete "${task.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+      builder: (context) => Theme(
+        data: theme,
+        child: AlertDialog(
+          title: Text(
+            'Delete Task?',
+            style: TextStyle(color: colorScheme.onSurfaceVariant),
           ),
-          TextButton(
-            onPressed: () {
-              final group = categories.firstWhere((g) => g.id == groupId);
-              setState(() {
-                group.items.removeWhere((t) => t.id == task.id);
-              });
-              _broadcastUpdate(groupId);
-              Navigator.pop(context);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          content: Text(
+            'Are you sure you want to delete "${task.title}"?',
+            style: TextStyle(color: colorScheme.onSurface),
           ),
-        ],
-      ),
-    );
-  }
-
-  void _showInputDialog(
-    String title,
-    Function(String) onSubmit, {
-    String initialText = '',
-  }) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        String input = initialText;
-        return AlertDialog(
-          title: Text(title),
-          content: TextFormField(
-            initialValue: initialText,
-            autofocus: true,
-            onChanged: (val) => input = val,
-            onFieldSubmitted: (val) {
-              if (val.isNotEmpty) onSubmit(val);
-              Navigator.pop(context);
-            },
-          ),
+          backgroundColor: colorScheme.surfaceContainerHigh,
           actions: [
+            // Return FALSE to cancel the swipe
             TextButton(
-              onPressed: () {
-                if (input.isNotEmpty) onSubmit(input);
-                Navigator.pop(context);
-              },
-              child: const Text('Save'),
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            // Return TRUE to trigger the shrink animation
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Delete', style: TextStyle(color: Colors.red)),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
+    return confirm ?? false;
+  }
+
+  void _executeTaskDismissal(String groupId, KanbanTask task) {
+    final group = categories.firstWhere((g) => g.id == groupId);
+    setState(() {
+      group.items.removeWhere((t) => t.id == task.id);
+    });
+    _saveData();
+    _broadcastUpdate(groupId);
   }
 
   void _advanceTaskDirectionally(
@@ -373,7 +588,7 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
       final payload = jsonEncode({
         'id': group.id,
         'title': group.name,
-        'items': group.items.map((item) => item.title).toList(),
+        'items': group.items.map((item) => item.toJson()).toList(),
         'isFirst': groupIndex == 0,
         'isLast': groupIndex == categories.length - 1,
         'themeMode': _themeMode.name,
@@ -402,11 +617,17 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
           _advanceTaskDirectionally(payload['category'], payload['task'], -1);
         } else if (call.method == 'delete_task') {
           _deleteTask(payload['category'], payload['task']);
+        } else if (call.method == 'edit_task') {
+          _submitEditTask(
+            groupId,
+            KanbanTask(payload['oldTask']),
+            payload['newTask'],
+          );
         }
         return 'success';
       });
     } finally {
-      await Future.delayed(const Duration(milliseconds: 1600));
+      await Future.delayed(const Duration(milliseconds: 400));
       if (mounted) {
         setState(() {
           _isWindowProcessing = false;
@@ -465,11 +686,15 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
           mainAxisAlignment: .center,
           children: [
             CustomTitleBar(
-              onAddCategory: _promptAddCategory,
+              onAddCategory: _submitAddCategory,
+              onExportBackup: _exportBackup,
+              onImportBackup: _importBackup,
               currentMode: _themeMode,
               currentColor: _seedColor,
               onModeChanged: _updateThemeMode,
               onColorChanged: _updateSeedColor,
+              isBirthday: _isBirthday,
+              onBirthdayTwist: _triggerBirthdayTwist,
             ),
             AutoResizingBoard(
               categories: categories,
@@ -478,11 +703,13 @@ class _KanbanBoardPageState extends State<KanbanBoardPage> {
               onItemReorder: _onItemReorder,
               onListReorder: _onListReorder,
               onPopOutCategory: _handlePopOutCategory,
-              onAddTask: _promptAddTask,
-              onEditTask: _promptEditTask,
-              onDeleteTask: _promptDeleteTask,
-              onEditCategory: _promptEditCategory,
+              onAddTask: _submitAddTask,
+              onEditTask: _submitEditTask,
+              onDeleteTaskPrompt: _promptDeleteTask,
+              onTaskDismissed: _executeTaskDismissal,
+              onEditCategory: _submitEditCategory,
               onDeleteCategory: _promptDeleteCategory,
+              exitingGroupId: _exitingGroupId,
               isProcessing: _isWindowProcessing,
               processingGroupId: _processingGroupId,
             ),

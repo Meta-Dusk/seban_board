@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
-import 'package:seban_board/components/seed_color_selector.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
+
+import 'package:seban_board/components/seed_color_selector.dart';
 
 class StickyNotePage extends StatefulWidget {
   final String windowId;
@@ -16,7 +19,7 @@ class StickyNotePage extends StatefulWidget {
 class _StickyNotePageState extends State<StickyNotePage> {
   late String groupId;
   late String title;
-  late List<String> items;
+  late List<Map<String, dynamic>> items;
   late bool isFirst;
   late bool isLast;
   late ThemeMode themeMode;
@@ -27,7 +30,7 @@ class _StickyNotePageState extends State<StickyNotePage> {
     super.initState();
     groupId = widget.data['id'] ?? '';
     title = widget.data['title'] ?? "Notes";
-    items = List<String>.from(widget.data['items'] ?? []);
+    items = List<Map<String, dynamic>>.from(widget.data['items'] ?? []);
     isFirst = widget.data['isFirst'] ?? false;
     isLast = widget.data['isLast'] ?? false;
 
@@ -44,14 +47,14 @@ class _StickyNotePageState extends State<StickyNotePage> {
         final payload = call.arguments as Map;
         setState(() {
           title = payload['title'];
-          items = List<String>.from(payload['items']);
+          items = List<Map<String, dynamic>>.from(payload['items']);
           isFirst = payload['isFirst'] ?? false;
           isLast = payload['isLast'] ?? false;
 
           final updatedModeStr = payload['themeMode'] ?? 'system';
           themeMode = ThemeMode.values.firstWhere(
             (e) => e.name == updatedModeStr,
-            orElse: () => .system,
+            orElse: () => ThemeMode.system,
           );
         });
       }
@@ -82,69 +85,10 @@ class _StickyNotePageState extends State<StickyNotePage> {
     );
   }
 
-  void _promptEditCategory() {
-    String input = title;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rename Category'),
-        content: TextFormField(
-          initialValue: title,
-          autofocus: true,
-          onChanged: (val) => input = val,
-          onFieldSubmitted: (val) {
-            if (val.isNotEmpty) _submitRename(input);
-            Navigator.pop(context);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (input.isNotEmpty) _submitRename(input);
-              Navigator.pop(context);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _submitRename(String newName) {
+    if (newName.trim().isEmpty) return;
     final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
     uniqueChannel.invokeMethod('rename_category', {'newName': newName});
-  }
-
-  void _promptDeleteCategory() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Category?'),
-        content: const Text(
-          'Are you sure you want to delete this category and all of its tasks?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final uniqueChannel = WindowMethodChannel(
-                'kanban_sync_${widget.windowId}',
-              );
-              uniqueChannel.invokeMethod('delete_category');
-              Navigator.pop(context);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -165,16 +109,26 @@ class _StickyNotePageState extends State<StickyNotePage> {
       data: theme,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: StickyNoteWidget(
-          title: title,
-          items: items,
-          windowId: widget.windowId,
-          isFirst: isFirst,
-          isLast: isLast,
-          currentColor: localSeedColor,
-          onEditCategory: _promptEditCategory,
-          onDeleteCategory: _promptDeleteCategory,
-          onColorChanged: (color) => setState(() => localSeedColor = color),
+        body: Stack(
+          children: [
+            StickyNoteWidget(
+              title: title,
+              items: items,
+              windowId: widget.windowId,
+              isFirst: isFirst,
+              isLast: isLast,
+              currentColor: localSeedColor,
+              onEditCategory: _submitRename,
+              onColorChanged: (color) => setState(() => localSeedColor = color),
+            ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: _ResizeHandle(
+                iconColor: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -191,18 +145,16 @@ class StickyNoteWidget extends StatelessWidget {
     required this.isLast,
     required this.currentColor,
     required this.onEditCategory,
-    required this.onDeleteCategory,
     required this.onColorChanged,
   });
 
   final String title;
-  final List<String> items;
+  final List<Map<String, dynamic>> items;
   final String windowId;
   final bool isFirst;
   final bool isLast;
   final Color currentColor;
-  final VoidCallback onEditCategory;
-  final VoidCallback onDeleteCategory;
+  final void Function(String) onEditCategory;
   final ValueChanged<Color> onColorChanged;
 
   @override
@@ -227,7 +179,6 @@ class StickyNoteWidget extends StatelessWidget {
             title: title,
             currentColor: currentColor,
             onEditCategory: onEditCategory,
-            onDeleteCategory: onDeleteCategory,
             onColorChanged: onColorChanged,
           ),
           _StickyNoteWidgetContent(
@@ -253,7 +204,7 @@ class _StickyNoteWidgetContent extends StatefulWidget {
   });
 
   final String title;
-  final List<String> items;
+  final List<Map<String, dynamic>> items;
   final String windowId;
   final bool isFirst;
   final bool isLast;
@@ -264,71 +215,20 @@ class _StickyNoteWidgetContent extends StatefulWidget {
 }
 
 class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Expanded(
-      child: ListView.builder(
-        padding: const .all(12),
-        itemCount: widget.items.length,
-        itemBuilder: (context, index) {
-          final task = widget.items[index];
-          final paddedText = Padding(
-            padding: const .symmetric(vertical: 12.0, horizontal: 4.0),
-            child: SizedBox(
-              width: double.infinity,
-              child: Text(
-                task,
-                style: TextStyle(
-                  color: colorScheme.onPrimaryContainer,
-                  fontSize: 14,
-                  height: 1.3,
-                ),
-              ),
-            ),
-          );
-
-          return Dismissible(
-            key: ValueKey(task),
-            direction: .horizontal,
-            background: _SwipeBackground(
-              color: widget.isLast ? Colors.redAccent : Colors.green,
-              icon: widget.isLast ? Icons.delete : Icons.arrow_forward,
-              alignment: .centerLeft,
-              padding: const .only(left: 16),
-            ),
-            secondaryBackground: _SwipeBackground(
-              color: widget.isFirst ? Colors.redAccent : Colors.blue,
-              icon: widget.isFirst ? Icons.delete : Icons.arrow_back,
-              alignment: .centerRight,
-              padding: const .only(right: 16),
-            ),
-            confirmDismiss: (direction) async {
-              if (direction == DismissDirection.startToEnd) {
-                if (widget.isLast) return await _promptDelete(context, task);
-                _invokeTaskAction(task, 'move_next');
-                return true;
-              } else {
-                if (widget.isFirst) return await _promptDelete(context, task);
-                _invokeTaskAction(task, 'move_prev');
-                return true;
-              }
-            },
-            onDismissed: (direction) {
-              setState(() => widget.items.removeAt(index));
-            },
-            child: paddedText,
-          );
-        },
-      ),
-    );
-  }
-
   void _invokeTaskAction(String task, String action) {
     final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
     uniqueChannel.invokeMethod(action, {
       'category': widget.title,
       'task': task,
+    });
+  }
+
+  void _invokeTaskEdit(String oldTask, String newTask) {
+    final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
+    uniqueChannel.invokeMethod('edit_task', {
+      'category': widget.title,
+      'oldTask': oldTask,
+      'newTask': newTask,
     });
   }
 
@@ -356,6 +256,180 @@ class _StickyNoteWidgetContentState extends State<_StickyNoteWidgetContent> {
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: ListView.builder(
+        padding: const .all(12),
+        itemCount: widget.items.length,
+        itemBuilder: (context, index) {
+          final taskData = widget.items[index];
+          final taskTitle = taskData['title'];
+          final taskImagePath = taskData['imagePath'] as String?;
+
+          return Dismissible(
+            key: ValueKey(taskTitle),
+            direction: .horizontal,
+            background: _SwipeBackground(
+              color: widget.isLast ? Colors.redAccent : Colors.green,
+              icon: widget.isLast ? Icons.delete : Icons.arrow_forward,
+              alignment: .centerLeft,
+              padding: const .only(left: 16),
+            ),
+            secondaryBackground: _SwipeBackground(
+              color: widget.isFirst ? Colors.redAccent : Colors.blue,
+              icon: widget.isFirst ? Icons.delete : Icons.arrow_back,
+              alignment: .centerRight,
+              padding: const .only(right: 16),
+            ),
+            confirmDismiss: (direction) async {
+              if (direction == DismissDirection.startToEnd) {
+                if (widget.isLast) {
+                  return await _promptDelete(context, taskTitle);
+                }
+                _invokeTaskAction(taskTitle, 'move_next');
+                return true;
+              } else {
+                if (widget.isFirst) {
+                  return await _promptDelete(context, taskTitle);
+                }
+                _invokeTaskAction(taskTitle, 'move_prev');
+                return true;
+              }
+            },
+            onDismissed: (direction) {
+              setState(() => widget.items.removeAt(index));
+            },
+            child: _InlineTaskItem(
+              taskTitle: taskTitle,
+              imagePath: taskImagePath,
+              colorScheme: colorScheme,
+              onEditTask: _invokeTaskEdit,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _InlineTaskItem extends StatefulWidget {
+  final String taskTitle;
+  final String? imagePath;
+  final ColorScheme colorScheme;
+  final void Function(String oldTask, String newTask) onEditTask;
+
+  const _InlineTaskItem({
+    required this.taskTitle,
+    required this.imagePath,
+    required this.colorScheme,
+    required this.onEditTask,
+  });
+
+  @override
+  State<_InlineTaskItem> createState() => _InlineTaskItemState();
+}
+
+class _InlineTaskItemState extends State<_InlineTaskItem> {
+  bool _isEditing = false;
+  late TextEditingController _controller;
+  late FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.taskTitle);
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus && _isEditing) _saveAndClose();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _InlineTaskItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Handle background updates over the IPC channel
+    if (oldWidget.taskTitle != widget.taskTitle && !_isEditing) {
+      _controller.text = widget.taskTitle;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _saveAndClose() {
+    if (!_isEditing) return;
+    final text = _controller.text.trim();
+    if (text.isNotEmpty && text != widget.taskTitle) {
+      widget.onEditTask(widget.taskTitle, text);
+    } else {
+      _controller.text = widget.taskTitle; // Revert if blank
+    }
+    setState(() => _isEditing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textField = TextField(
+      controller: _controller,
+      focusNode: _focusNode,
+      style: TextStyle(
+        color: widget.colorScheme.onPrimaryContainer,
+        fontSize: 14,
+        height: 1.3,
+      ),
+      decoration: const InputDecoration(
+        isDense: true,
+        contentPadding: .zero,
+        border: .none,
+      ),
+      onSubmitted: (_) => _saveAndClose(),
+    );
+
+    final text = Text(
+      widget.taskTitle,
+      style: TextStyle(
+        color: widget.colorScheme.onPrimaryContainer,
+        fontSize: 14,
+        height: 1.3,
+      ),
+    );
+
+    return GestureDetector(
+      onDoubleTap: () {
+        setState(() => _isEditing = true);
+        _focusNode.requestFocus();
+      },
+      child: Padding(
+        padding: const .symmetric(vertical: 12.0, horizontal: 4.0),
+        child: Column(
+          crossAxisAlignment: .start,
+          mainAxisSize: .min,
+          children: [
+            if (widget.imagePath != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: widget.imagePath!.startsWith('assets/')
+                    ? Image.asset(widget.imagePath!, fit: BoxFit.cover)
+                    : Image.file(File(widget.imagePath!), fit: BoxFit.cover),
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: _isEditing ? textField : text,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _SwipeBackground extends StatelessWidget {
@@ -380,68 +454,105 @@ class _SwipeBackground extends StatelessWidget {
   );
 }
 
-class _DraggableStickyNoteTitleBar extends StatelessWidget {
+class _DraggableStickyNoteTitleBar extends StatefulWidget {
   const _DraggableStickyNoteTitleBar({
     required this.title,
     required this.currentColor,
     required this.onEditCategory,
-    required this.onDeleteCategory,
     required this.onColorChanged,
   });
 
   final String title;
   final Color currentColor;
-  final VoidCallback onEditCategory;
-  final VoidCallback onDeleteCategory;
+  final void Function(String) onEditCategory;
   final ValueChanged<Color> onColorChanged;
+
+  @override
+  State<_DraggableStickyNoteTitleBar> createState() =>
+      _DraggableStickyNoteTitleBarState();
+}
+
+class _DraggableStickyNoteTitleBarState
+    extends State<_DraggableStickyNoteTitleBar> {
+  bool _isEditing = false;
+  late TextEditingController _controller;
+  late FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.title);
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus && _isEditing) _saveAndClose();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _DraggableStickyNoteTitleBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.title != widget.title && !_isEditing) {
+      _controller.text = widget.title;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _saveAndClose() {
+    if (!_isEditing) return;
+    final text = _controller.text.trim();
+    if (text.isNotEmpty && text != widget.title) {
+      widget.onEditCategory(text);
+    } else {
+      _controller.text = widget.title;
+    }
+    setState(() => _isEditing = false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    final titleText = Expanded(
-      child: Text(
-        title,
-        style: TextStyle(
-          fontWeight: .bold,
-          fontSize: 16,
-          color: colorScheme.onPrimaryContainer,
-        ),
-        overflow: .ellipsis,
-      ),
-    );
-
     final colorSelector = SeedColorSelector(
-      currentColor: currentColor,
-      color: colorScheme.onPrimaryContainer,
-      onColorChanged: onColorChanged,
-    );
-
-    final contextMenuButton = PopupMenuButton<String>(
-      icon: Icon(
-        Icons.more_vert,
-        size: 18,
-        color: colorScheme.onPrimaryContainer,
-      ),
-      tooltip: "Category Options",
-      onSelected: (value) {
-        if (value == 'edit') onEditCategory();
-        if (value == 'delete') onDeleteCategory();
-      },
-      itemBuilder: (context) => [
-        const PopupMenuItem(value: 'edit', child: Text('Rename Category')),
-        const PopupMenuItem(
-          value: 'delete',
-          child: Text('Delete Category', style: TextStyle(color: Colors.red)),
-        ),
-      ],
-      constraints: const BoxConstraints(),
+      currentColor: widget.currentColor,
+      onColorChanged: widget.onColorChanged,
     );
 
     final closeButton = IconButton(
       icon: Icon(Icons.close, size: 18, color: colorScheme.onPrimaryContainer),
       onPressed: () async => await windowManager.close(),
       constraints: const BoxConstraints(),
+    );
+
+    final textField = TextField(
+      controller: _controller,
+      focusNode: _focusNode,
+      style: TextStyle(
+        fontWeight: .bold,
+        fontSize: 16,
+        color: colorScheme.onPrimaryContainer,
+      ),
+      decoration: const InputDecoration(
+        isDense: true,
+        contentPadding: .zero,
+        border: .none,
+      ),
+      onSubmitted: (_) => _saveAndClose(),
+    );
+
+    final text = Text(
+      widget.title,
+      style: TextStyle(
+        fontWeight: .bold,
+        fontSize: 16,
+        color: colorScheme.onPrimaryContainer,
+      ),
+      overflow: .ellipsis,
     );
 
     return DragToMoveArea(
@@ -457,19 +568,48 @@ class _DraggableStickyNoteTitleBar extends StatelessWidget {
         child: Row(
           mainAxisAlignment: .spaceBetween,
           children: [
-            titleText,
+            Expanded(
+              child: GestureDetector(
+                onDoubleTap: () {
+                  setState(() => _isEditing = true);
+                  _focusNode.requestFocus();
+                },
+                child: _isEditing ? textField : text,
+              ),
+            ),
             Row(
               mainAxisSize: .min,
-              children: [
-                colorSelector,
-                contextMenuButton,
-                closeButton,
-                const SizedBox(width: 8),
-              ],
+              children: [colorSelector, closeButton, const SizedBox(width: 8)],
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _ResizeHandle extends StatelessWidget {
+  final Color iconColor;
+
+  const _ResizeHandle({required this.iconColor});
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: SystemMouseCursors.resizeUpLeftDownRight,
+    child: GestureDetector(
+      // Trigger the native OS window resize behavior
+      onPanStart: (details) {
+        windowManager.startResizing(.bottomRight);
+      },
+      child: Container(
+        color: Colors.transparent,
+        padding: const .all(4.0),
+        child: Icon(
+          Icons.zoom_out_map,
+          size: 16,
+          color: iconColor.withValues(alpha: 0.5),
+        ),
+      ),
+    ),
+  );
 }

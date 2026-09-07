@@ -1,38 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:seban_board/components/seed_color_selector.dart';
+import 'package:seban_board/components/theme_mode_selector.dart';
 import 'package:window_manager/window_manager.dart';
 
 class CustomTitleBar extends StatelessWidget {
-  final VoidCallback onAddCategory;
+  final void Function(String categoryName) onAddCategory;
+  final VoidCallback onExportBackup;
+  final VoidCallback onImportBackup;
   final ThemeMode currentMode;
   final Color currentColor;
   final ValueChanged<ThemeMode> onModeChanged;
   final ValueChanged<Color> onColorChanged;
+  final bool isBirthday;
+  final VoidCallback onBirthdayTwist;
 
   const CustomTitleBar({
     super.key,
     required this.onAddCategory,
+    required this.onExportBackup,
+    required this.onImportBackup,
     required this.currentMode,
     required this.currentColor,
     required this.onModeChanged,
     required this.onColorChanged,
+    required this.isBirthday,
+    required this.onBirthdayTwist,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    final addCategoryButton = IconButton(
-      onPressed: onAddCategory,
-      icon: Icon(
-        Icons.add_box,
-        size: 18,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-      tooltip: "Add Category",
-      padding: const .symmetric(horizontal: 8),
-      constraints: const BoxConstraints(),
-    );
 
     final divider = Padding(
       padding: const .symmetric(horizontal: 8),
@@ -87,6 +84,42 @@ class CustomTitleBar extends StatelessWidget {
       style: TextStyle(fontWeight: .bold, color: theme.colorScheme.onSurface),
     );
 
+    final importButton = IconButton(
+      onPressed: onImportBackup,
+      icon: Icon(
+        Icons.file_download_outlined,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      tooltip: "Import Backup",
+      padding: const .symmetric(horizontal: 8),
+      constraints: const BoxConstraints(),
+    );
+
+    final exportButton = IconButton(
+      onPressed: onExportBackup,
+      icon: Icon(
+        Icons.file_upload_outlined,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      tooltip: "Export Backup",
+      padding: const .symmetric(horizontal: 8),
+      constraints: const BoxConstraints(),
+    );
+
+    final bdayButton = IconButton(
+      onPressed: onBirthdayTwist,
+      icon: Icon(
+        Icons.card_giftcard,
+        size: 18,
+        color: theme.colorScheme.primary,
+      ),
+      tooltip: "A special surprise...",
+      padding: const .symmetric(horizontal: 8),
+      constraints: const BoxConstraints(),
+    );
+
     return DragToMoveArea(
       child: Container(
         height: 40,
@@ -99,7 +132,6 @@ class CustomTitleBar extends StatelessWidget {
           children: [
             titleText,
             Row(
-              // mainAxisSize: .min,
               children: [
                 ThemeModeSelector(
                   currentMode: currentMode,
@@ -108,11 +140,18 @@ class CustomTitleBar extends StatelessWidget {
                 ),
                 SeedColorSelector(
                   currentColor: currentColor,
-                  color: theme.colorScheme.onSurfaceVariant,
                   onColorChanged: onColorChanged,
                 ),
+                if (isBirthday) bdayButton,
+                importButton,
+                exportButton,
+
                 divider,
-                addCategoryButton,
+                _InlineAddCategoryButton(
+                  onAddCategory: onAddCategory,
+                  theme: theme,
+                ),
+
                 divider,
                 minimizeButton,
                 maximizeButton,
@@ -126,54 +165,98 @@ class CustomTitleBar extends StatelessWidget {
   }
 }
 
-class ThemeModeSelector extends StatelessWidget {
-  const ThemeModeSelector({
-    super.key,
-    required this.currentMode,
+class _InlineAddCategoryButton extends StatefulWidget {
+  final void Function(String) onAddCategory;
+  final ThemeData theme;
+
+  const _InlineAddCategoryButton({
+    required this.onAddCategory,
     required this.theme,
-    required this.onModeChanged,
   });
 
-  final ThemeMode currentMode;
-  final ThemeData theme;
-  final ValueChanged<ThemeMode> onModeChanged;
+  @override
+  State<_InlineAddCategoryButton> createState() =>
+      _InlineAddCategoryButtonState();
+}
+
+class _InlineAddCategoryButtonState extends State<_InlineAddCategoryButton> {
+  bool _isEditing = false;
+  late TextEditingController _controller;
+  late FocusNode _focusNode;
 
   @override
-  Widget build(BuildContext context) => DropdownButton<ThemeMode>(
-    value: currentMode,
-    underline: const SizedBox(),
-    padding: const .symmetric(horizontal: 4),
-    icon: Padding(
-      padding: const .only(left: 4),
-      child: Icon(
-        Icons.brightness_medium,
-        size: 16,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-    ),
-    onChanged: (val) => onModeChanged(val!),
-    items: [
-      DropdownMenuItem(
-        value: .system,
-        child: Text(
-          'System',
-          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus && _isEditing) _saveAndClose();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _saveAndClose() {
+    if (!_isEditing) return;
+    final text = _controller.text.trim();
+    if (text.isNotEmpty) {
+      widget.onAddCategory(text);
+    }
+    _controller.clear();
+    setState(() => _isEditing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isEditing) {
+      return SizedBox(
+        width: 140,
+        child: TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          style: TextStyle(
+            color: widget.theme.colorScheme.onSurface,
+            fontSize: 13,
+          ),
+          decoration: InputDecoration(
+            hintText: 'New Category...',
+            hintStyle: TextStyle(
+              color: widget.theme.colorScheme.onSurfaceVariant.withValues(
+                alpha: 0.5,
+              ),
+            ),
+            isDense: true,
+            contentPadding: const .symmetric(horizontal: 8, vertical: 6),
+            border: OutlineInputBorder(
+              borderRadius: .circular(4),
+              borderSide: .none,
+            ),
+            filled: true,
+            fillColor: widget.theme.colorScheme.surfaceContainerHighest,
+          ),
+          onSubmitted: (_) => _saveAndClose(),
         ),
+      );
+    }
+
+    return IconButton(
+      onPressed: () {
+        setState(() => _isEditing = true);
+        _focusNode.requestFocus();
+      },
+      icon: Icon(
+        Icons.add_box,
+        size: 18,
+        color: widget.theme.colorScheme.onSurfaceVariant,
       ),
-      DropdownMenuItem(
-        value: .light,
-        child: Text(
-          'Light',
-          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
-        ),
-      ),
-      DropdownMenuItem(
-        value: .dark,
-        child: Text(
-          'Dark',
-          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface),
-        ),
-      ),
-    ],
-  );
+      tooltip: "Add Category",
+      padding: const .symmetric(horizontal: 8),
+      constraints: const BoxConstraints(),
+    );
+  }
 }

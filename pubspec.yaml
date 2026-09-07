@@ -1,7 +1,7 @@
 name: seban_board
 description: "A Flutter-Based Kanban Board with a Twist."
 publish_to: "none"
-version: 0.3.2+1
+version: 0.4.6+1
 
 environment:
     sdk: ^3.11.3
@@ -9,8 +9,10 @@ environment:
 dependencies:
     desktop_multi_window: ^0.3.1
     drag_and_drop_lists: ^0.4.2
+    file_picker: ^12.2.0
     flutter:
         sdk: flutter
+    path_provider: ^2.1.6
     window_manager: ^0.5.2
 
 dev_dependencies:
@@ -20,3 +22,14 @@ dev_dependencies:
 
 flutter:
     uses-material-design: true
+    assets:
+        - assets/
+        - assets/images/
+        - assets/images/aespa/
+        - assets/images/le_serrafim/
+        - assets/images/red_velvet/
+        - assets/images/new_jeans/
+        - assets/images/illit/
+        - assets/images/babymonster/
+        - assets/images/katseye/
+        - assets/images/twice/
