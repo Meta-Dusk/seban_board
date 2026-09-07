@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:seban_board/features/kanban/models/kanban_task.dart';
+
+import '../../../../models/kanban.dart';
 
 class HeaderWidget extends StatefulWidget {
   const HeaderWidget({

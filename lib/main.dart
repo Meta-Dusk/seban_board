@@ -1,11 +1,12 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'core/window_manager_setup.dart';
-import 'features/kanban/views/kanban_board_page.dart';
-import 'features/sticky_note/views/sticky_note_page.dart';
+import 'features/kanban/views/board/kanban_board_page.dart';
+import 'features/kanban/views/sticky_note/sticky_note_page.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
