@@ -7,15 +7,11 @@ class DraggableStickyNoteTitleBar extends StatefulWidget {
   const DraggableStickyNoteTitleBar({
     super.key,
     required this.title,
-    required this.currentColor,
     required this.onEditCategory,
-    required this.onColorChanged,
   });
 
   final String title;
-  final Color currentColor;
   final void Function(String) onEditCategory;
-  final ValueChanged<Color> onColorChanged;
 
   @override
   State<DraggableStickyNoteTitleBar> createState() =>
@@ -67,11 +63,6 @@ class _DraggableStickyNoteTitleBarState
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-
-    final colorSelector = SeedColorSelector(
-      currentColor: widget.currentColor,
-      onColorChanged: widget.onColorChanged,
-    );
 
     final closeButton = IconButton(
       icon: Icon(Icons.close, size: 18, color: colorScheme.onPrimaryContainer),
@@ -129,7 +120,11 @@ class _DraggableStickyNoteTitleBarState
             ),
             Row(
               mainAxisSize: .min,
-              children: [colorSelector, closeButton, const SizedBox(width: 8)],
+              children: [
+                const SeedColorSelector(),
+                closeButton,
+                const SizedBox(width: 8),
+              ],
             ),
           ],
         ),

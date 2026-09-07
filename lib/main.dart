@@ -7,9 +7,12 @@ import 'package:window_manager/window_manager.dart';
 import 'core/window_manager_setup.dart';
 import 'features/kanban/views/board/kanban_board_page.dart';
 import 'features/kanban/views/sticky_note/sticky_note_page.dart';
+import 'features/kanban/services/theme_service.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await ThemeService.init();
 
   // Check the current engine's controller to see if it's a sub-window
   final windowController = await WindowController.fromCurrentEngine();
@@ -22,6 +25,7 @@ Future<void> main(List<String> args) async {
     await windowManager.ensureInitialized();
     WindowOptions stickyNoteOptions = const WindowOptions(
       size: Size(300, 350),
+      minimumSize: Size(100, 150),
       backgroundColor: Colors.transparent,
       titleBarStyle: .hidden,
     );

@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../../components/seed_color_selector.dart';
-import '../../components/theme_mode_selector.dart';
+import '../../components/settings_dropdown.dart';
 
 class CustomTitleBar extends StatelessWidget {
   final void Function(String categoryName) onAddCategory;
   final VoidCallback onExportBackup;
   final VoidCallback onImportBackup;
-  final ThemeMode currentMode;
-  final Color currentColor;
-  final ValueChanged<ThemeMode> onModeChanged;
-  final ValueChanged<Color> onColorChanged;
   final bool isBirthday;
   final VoidCallback onBirthday;
 
@@ -20,10 +15,6 @@ class CustomTitleBar extends StatelessWidget {
     required this.onAddCategory,
     required this.onExportBackup,
     required this.onImportBackup,
-    required this.currentMode,
-    required this.currentColor,
-    required this.onModeChanged,
-    required this.onColorChanged,
     required this.isBirthday,
     required this.onBirthday,
   });
@@ -85,80 +76,32 @@ class CustomTitleBar extends StatelessWidget {
       style: TextStyle(fontWeight: .bold, color: theme.colorScheme.onSurface),
     );
 
-    final importButton = IconButton(
-      onPressed: onImportBackup,
-      icon: Icon(
-        Icons.file_download_outlined,
-        size: 18,
-        color: theme.colorScheme.onSurfaceVariant,
+    final mainContent = [
+      _InlineAddCategoryButton(onAddCategory: onAddCategory, theme: theme),
+      divider,
+      SettingsDropdown(
+        onExportBackup: onExportBackup,
+        onImportBackup: onImportBackup,
+        isBirthday: isBirthday,
+        onBirthday: onBirthday,
       ),
-      tooltip: "Import Backup",
-      padding: const .symmetric(horizontal: 8),
-      constraints: const BoxConstraints(),
-    );
-
-    final exportButton = IconButton(
-      onPressed: onExportBackup,
-      icon: Icon(
-        Icons.file_upload_outlined,
-        size: 18,
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-      tooltip: "Export Backup",
-      padding: const .symmetric(horizontal: 8),
-      constraints: const BoxConstraints(),
-    );
-
-    final bdayButton = IconButton(
-      onPressed: onBirthday,
-      icon: Icon(
-        Icons.card_giftcard,
-        size: 18,
-        color: theme.colorScheme.primary,
-      ),
-      tooltip: "A special surprise...",
-      padding: const .symmetric(horizontal: 8),
-      constraints: const BoxConstraints(),
-    );
+      minimizeButton,
+      maximizeButton,
+      closeButton,
+    ];
 
     return DragToMoveArea(
       child: Container(
         height: 40,
         width: double.infinity,
         color: Colors.grey.withValues(alpha: 0.1),
-        alignment: Alignment.centerLeft,
+        alignment: .centerLeft,
         padding: const .symmetric(horizontal: 16),
         child: Row(
           mainAxisAlignment: .spaceBetween,
           children: [
             titleText,
-            Row(
-              children: [
-                ThemeModeSelector(
-                  currentMode: currentMode,
-                  theme: theme,
-                  onModeChanged: onModeChanged,
-                ),
-                SeedColorSelector(
-                  currentColor: currentColor,
-                  onColorChanged: onColorChanged,
-                ),
-                if (isBirthday) bdayButton,
-                importButton,
-                exportButton,
-
-                divider,
-                _InlineAddCategoryButton(
-                  onAddCategory: onAddCategory,
-                  theme: theme,
-                ),
-
-                divider,
-                minimizeButton,
-                maximizeButton,
-                closeButton,
-              ],
-            ),
+            Row(children: mainContent),
           ],
         ),
       ),
