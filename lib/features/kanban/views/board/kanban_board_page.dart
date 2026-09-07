@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:seban_board/features/kanban/services/theme_service.dart';
 
 import 'package:window_manager/window_manager.dart';
 
@@ -8,8 +9,8 @@ import '../../models/kanban.dart';
 import '../../services/birthday_service.dart';
 import '../../services/window_sync_service.dart';
 import '../../services/storage_service.dart';
-import 'custom_title_bar.dart';
 import 'auto_resizing_board/auto_resizing_board.dart';
+import 'custom_title_bar.dart';
 
 class KanbanBoardPage extends StatefulWidget {
   const KanbanBoardPage({super.key});
@@ -30,9 +31,6 @@ class _KanbanBoardPageState extends State<KanbanBoardPage>
 
   double _columnWidth = 320.0;
   final double _minColumnWidth = 280.0;
-
-  ThemeMode _themeMode = .system;
-  Color _seedColor = Colors.blue;
 
   List<KanbanCategory> categories = [];
 
@@ -62,6 +60,9 @@ class _KanbanBoardPageState extends State<KanbanBoardPage>
     );
 
     _loadData();
+
+    ThemeService.themeMode.addListener(_broadcastAllUpdates);
+    ThemeService.seedColor.addListener(_broadcastAllUpdates);
   }
 
   Future<void> _initCloseInterceptor() async {
@@ -76,6 +77,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage>
 
   @override
   void dispose() {
+    ThemeService.themeMode.removeListener(_broadcastAllUpdates);
+    ThemeService.seedColor.removeListener(_broadcastAllUpdates);
     windowManager.removeListener(this);
     super.dispose();
   }
@@ -125,17 +128,6 @@ class _KanbanBoardPageState extends State<KanbanBoardPage>
     _columnWidth = (_columnWidth + delta).clamp(_minColumnWidth, 800.0);
   });
 
-  // --- THEME UPDATERS ---
-  void _updateThemeMode(ThemeMode mode) {
-    setState(() => _themeMode = mode);
-    _broadcastAllUpdates();
-  }
-
-  void _updateSeedColor(Color color) {
-    setState(() => _seedColor = color);
-    _broadcastAllUpdates();
-  }
-
   void _broadcastAllUpdates() {
     for (KanbanCategory group in categories) {
       _broadcastUpdate(group.id);
@@ -143,13 +135,13 @@ class _KanbanBoardPageState extends State<KanbanBoardPage>
   }
 
   ThemeData _getCurrentTheme() {
-    final Brightness brightness = _themeMode == .system
+    final Brightness brightness = ThemeService.themeMode.value == .system
         ? MediaQuery.platformBrightnessOf(context)
-        : (_themeMode == .dark ? .dark : .light);
+        : (ThemeService.themeMode.value == .dark ? .dark : .light);
 
     return ThemeData(
       colorScheme: ColorScheme.fromSeed(
-        seedColor: _seedColor,
+        seedColor: ThemeService.seedColor.value,
         brightness: brightness,
       ),
       useMaterial3: true,
@@ -401,8 +393,8 @@ class _KanbanBoardPageState extends State<KanbanBoardPage>
         group: categories[groupIndex],
         groupIndex: groupIndex,
         totalGroups: categories.length,
-        themeModeName: _themeMode.name,
-        seedColorValue: _seedColor.toARGB32(),
+        themeModeName: ThemeService.themeMode.value.name,
+        seedColorValue: ThemeService.seedColor.value.toARGB32(),
         onRenameCategory: _renameCategoryFromSticky,
         onDeleteCategory: _deleteCategoryFromSticky,
         onMoveTask: _advanceTaskDirectionally,
@@ -428,63 +420,67 @@ class _KanbanBoardPageState extends State<KanbanBoardPage>
       group: categories[groupIndex],
       groupIndex: groupIndex,
       totalGroups: categories.length,
-      themeModeName: _themeMode.name,
-      seedColorValue: _seedColor.toARGB32(),
+      themeModeName: ThemeService.themeMode.value.name,
+      seedColorValue: ThemeService.seedColor.value.toARGB32(),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    final Brightness brightness = _themeMode == .system
-        ? MediaQuery.platformBrightnessOf(context)
-        : (_themeMode == .dark ? .dark : .light);
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([
+      ThemeService.themeMode,
+      ThemeService.seedColor,
+    ]),
+    builder: (context, _) {
+      final mode = ThemeService.themeMode.value;
+      final seed = ThemeService.seedColor.value;
 
-    final theme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _seedColor,
-        brightness: brightness,
-      ),
-      useMaterial3: true,
-    );
+      final Brightness brightness = mode == .system
+          ? MediaQuery.platformBrightnessOf(context)
+          : (mode == .dark ? .dark : .light);
 
-    return AnimatedTheme(
-      data: theme,
-      child: Scaffold(
-        backgroundColor: theme.colorScheme.surface,
-        body: Column(
-          mainAxisAlignment: .center,
-          children: [
-            CustomTitleBar(
-              onAddCategory: _submitAddCategory,
-              onExportBackup: _exportBackup,
-              onImportBackup: _importBackup,
-              currentMode: _themeMode,
-              currentColor: _seedColor,
-              onModeChanged: _updateThemeMode,
-              onColorChanged: _updateSeedColor,
-              isBirthday: _isBirthday,
-              onBirthday: _triggerBirthday,
-            ),
-            AutoResizingBoard(
-              categories: categories,
-              columnWidth: _columnWidth,
-              onColumnResize: _handleColumnResize,
-              onItemReorder: _onItemReorder,
-              onListReorder: _onListReorder,
-              onPopOutCategory: _handlePopOutCategory,
-              onAddTask: _submitAddTask,
-              onEditTask: _submitEditTask,
-              onDeleteTaskPrompt: _promptDeleteTask,
-              onTaskDismissed: _executeTaskDismissal,
-              onEditCategory: _submitEditCategory,
-              onDeleteCategory: _promptDeleteCategory,
-              exitingGroupId: _exitingGroupId,
-              isProcessing: _isWindowProcessing,
-              processingGroupId: _processingGroupId,
-            ),
-          ],
+      final theme = ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: brightness,
         ),
-      ),
-    );
-  }
+        useMaterial3: true,
+      );
+
+      final mainContent = [
+        CustomTitleBar(
+          onAddCategory: _submitAddCategory,
+          onExportBackup: _exportBackup,
+          onImportBackup: _importBackup,
+          isBirthday: _isBirthday,
+          onBirthday: _triggerBirthday,
+        ),
+        AutoResizingBoard(
+          categories: categories,
+          columnWidth: _columnWidth,
+          onColumnResize: _handleColumnResize,
+          onItemReorder: _onItemReorder,
+          onListReorder: _onListReorder,
+          onPopOutCategory: _handlePopOutCategory,
+          onAddTask: _submitAddTask,
+          onEditTask: _submitEditTask,
+          onDeleteTaskPrompt: _promptDeleteTask,
+          onTaskDismissed: _executeTaskDismissal,
+          onEditCategory: _submitEditCategory,
+          onDeleteCategory: _promptDeleteCategory,
+          exitingGroupId: _exitingGroupId,
+          isProcessing: _isWindowProcessing,
+          processingGroupId: _processingGroupId,
+        ),
+      ];
+
+      return AnimatedTheme(
+        data: theme,
+        child: Scaffold(
+          backgroundColor: theme.colorScheme.surface,
+          body: Column(mainAxisAlignment: .center, children: mainContent),
+        ),
+      );
+    },
+  );
 }

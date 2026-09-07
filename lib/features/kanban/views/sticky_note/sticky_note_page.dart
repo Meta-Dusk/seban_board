@@ -7,6 +7,7 @@ import 'widgets/resize_handle.dart';
 import 'widgets/sticky_note_content.dart';
 import '../../models/sticky_note_payload.dart';
 import '../../models/ipc_event.dart';
+import '../../services/theme_service.dart';
 
 class StickyNotePage extends StatefulWidget {
   final String windowId;
@@ -24,15 +25,13 @@ class _StickyNotePageState extends State<StickyNotePage> {
   late List<Map<String, dynamic>> items;
   late bool isFirst;
   late bool isLast;
-  late ThemeMode themeMode;
-  late Color localSeedColor;
 
   @override
   void initState() {
     super.initState();
 
-    // Parse the initial boot payload
-    _updateStateFromPayload(widget.data);
+    // Inherit brightness and seed color on initial window creation
+    _updateStateFromPayload(widget.data, isInit: true);
 
     final uniqueChannel = WindowMethodChannel('kanban_sync_${widget.windowId}');
     uniqueChannel.setMethodCallHandler((call) async {
@@ -44,7 +43,8 @@ class _StickyNotePageState extends State<StickyNotePage> {
           });
           return 'success';
         case UpdateCategoryEvent():
-          setState(() => _updateStateFromPayload(event.payload));
+          // Sync tasks and brightness, but keep local custom seed color
+          setState(() => _updateStateFromPayload(event.payload, isInit: false));
         case _:
           break;
       }
@@ -52,7 +52,10 @@ class _StickyNotePageState extends State<StickyNotePage> {
     });
   }
 
-  void _updateStateFromPayload(Map<dynamic, dynamic> rawMap) {
+  void _updateStateFromPayload(
+    Map<dynamic, dynamic> rawMap, {
+    bool isInit = false,
+  }) {
     final payload = StickyNotePayload.fromMap(rawMap);
 
     groupId = payload.id;
@@ -61,27 +64,30 @@ class _StickyNotePageState extends State<StickyNotePage> {
     isFirst = payload.isFirst;
     isLast = payload.isLast;
 
-    _applyThemeFromPayload(payload.themeMode, payload.seedColor);
-  }
-
-  void _applyThemeFromPayload(String modeStr, int incomingColorInt) {
-    themeMode = ThemeMode.values.firstWhere(
-      (e) => e.name == modeStr,
-      orElse: () => ThemeMode.system,
+    // Always update brightness mode to match the main board
+    final incomingMode = ThemeMode.values.firstWhere(
+      (e) => e.name == payload.themeMode,
+      orElse: () => .system,
     );
+    ThemeService.setMode(incomingMode);
 
-    const colorList = [
-      Colors.blue,
-      Colors.red,
-      Colors.green,
-      Colors.orange,
-      Colors.purple,
-    ];
+    // ONLY inherit seed color during initial creation
+    if (isInit) {
+      // Add <Color> right here to force the type
+      const List<Color> colorList = [
+        Colors.blue,
+        Colors.red,
+        Colors.green,
+        Colors.orange,
+        Colors.purple,
+      ];
 
-    localSeedColor = colorList.firstWhere(
-      (c) => c.toARGB32() == incomingColorInt,
-      orElse: () => Colors.blue,
-    );
+      final incomingColor = colorList.firstWhere(
+        (c) => c.toARGB32() == payload.seedColor,
+        orElse: () => Color(payload.seedColor),
+      );
+      ThemeService.setSeedColor(incomingColor);
+    }
   }
 
   void _submitRename(String newName) {
@@ -92,46 +98,53 @@ class _StickyNotePageState extends State<StickyNotePage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final Brightness brightness = themeMode == .system
-        ? MediaQuery.platformBrightnessOf(context)
-        : (themeMode == .dark ? .dark : .light);
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([
+      ThemeService.themeMode,
+      ThemeService.seedColor,
+    ]),
+    builder: (context, _) {
+      final mode = ThemeService.themeMode.value;
+      final seed = ThemeService.seedColor.value;
 
-    final theme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: localSeedColor,
-        brightness: brightness,
-      ),
-      useMaterial3: true,
-    );
+      final Brightness brightness = mode == .system
+          ? MediaQuery.platformBrightnessOf(context)
+          : (mode == .dark ? .dark : .light);
 
-    final stackedContent = [
-      _StickyNoteWidget(
-        title: title,
-        items: items,
-        windowId: widget.windowId,
-        isFirst: isFirst,
-        isLast: isLast,
-        currentColor: localSeedColor,
-        onEditCategory: _submitRename,
-        onColorChanged: (color) => setState(() => localSeedColor = color),
-        colorScheme: theme.colorScheme,
-      ),
-      Positioned(
-        right: 0,
-        bottom: 0,
-        child: ResizeHandle(iconColor: theme.colorScheme.onSurfaceVariant),
-      ),
-    ];
+      final theme = ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: brightness,
+        ),
+        useMaterial3: true,
+      );
 
-    return AnimatedTheme(
-      data: theme,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Stack(children: stackedContent),
-      ),
-    );
-  }
+      final stackedContent = [
+        _StickyNoteWidget(
+          title: title,
+          items: items,
+          windowId: widget.windowId,
+          isFirst: isFirst,
+          isLast: isLast,
+          onEditCategory: _submitRename,
+          colorScheme: theme.colorScheme,
+        ),
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: ResizeHandle(iconColor: theme.colorScheme.onSurfaceVariant),
+        ),
+      ];
+
+      return AnimatedTheme(
+        data: theme,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Stack(children: stackedContent),
+        ),
+      );
+    },
+  );
 }
 
 class _StickyNoteWidget extends StatelessWidget {
@@ -141,9 +154,7 @@ class _StickyNoteWidget extends StatelessWidget {
     required this.windowId,
     required this.isFirst,
     required this.isLast,
-    required this.currentColor,
     required this.onEditCategory,
-    required this.onColorChanged,
     required this.colorScheme,
   });
 
@@ -152,9 +163,7 @@ class _StickyNoteWidget extends StatelessWidget {
   final String windowId;
   final bool isFirst;
   final bool isLast;
-  final Color currentColor;
   final void Function(String) onEditCategory;
-  final ValueChanged<Color> onColorChanged;
   final ColorScheme colorScheme;
 
   @override
@@ -175,9 +184,7 @@ class _StickyNoteWidget extends StatelessWidget {
       children: [
         DraggableStickyNoteTitleBar(
           title: title,
-          currentColor: currentColor,
           onEditCategory: onEditCategory,
-          onColorChanged: onColorChanged,
         ),
         StickyNoteWidgetContent(
           title: title,
