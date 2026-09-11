@@ -9,12 +9,13 @@ mixin CategoryTriggerMixin {
 
     final presetMap = {
       'aespa': Assets.tasks.aespa,
-      'le serrafim': Assets.tasks.leSerrafim,
+      'le sserafim': Assets.tasks.leSserafim,
       'red velvet': Assets.tasks.redVelvet,
       'illit': Assets.tasks.illit,
       'babymonster': Assets.tasks.babymonster,
       'katseye': Assets.tasks.katseye,
       'twice': Assets.tasks.twice,
+      'new jeans': Assets.tasks.newJeans,
       '_list': Assets.tasks.availableList,
     };
 
