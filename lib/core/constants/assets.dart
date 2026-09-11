@@ -18,7 +18,7 @@ class _PresetTasks {
   const _PresetTasks();
 
   final aespa = _aespa;
-  final leSerrafim = _leSerrafim;
+  final leSserafim = _leSserafim;
   final redVelvet = _redVelvet;
   final newJeans = _newJeans;
   final illit = _illit;
@@ -34,25 +34,25 @@ class _PresetTasks {
     KanbanTask('Ningning', imagePath: 'assets/images/aespa/ningning.jpg'),
   ];
 
-  static const List<KanbanTask> _leSerrafim = [
+  static const List<KanbanTask> _leSserafim = [
     KanbanTask(
       'Kim Chae-won',
-      imagePath: 'assets/images/le_serrafim/chaewon.jpg',
+      imagePath: 'assets/images/le_sserafim/chaewon.jpg',
     ),
-    KanbanTask('Kazuha', imagePath: 'assets/images/le_serrafim/kazuha.png'),
+    KanbanTask('Kazuha', imagePath: 'assets/images/le_sserafim/kazuha.png'),
     KanbanTask(
       'Sakura Miyawaki',
-      imagePath: 'assets/images/le_serrafim/sakura.png',
+      imagePath: 'assets/images/le_sserafim/sakura.png',
     ),
     KanbanTask(
       'Huh Yun-jin',
-      imagePath: 'assets/images/le_serrafim/yunjin.jpg',
+      imagePath: 'assets/images/le_sserafim/yunjin.jpg',
     ),
     KanbanTask(
       'Hong Eun-chae',
-      imagePath: 'assets/images/le_serrafim/eunchae.png',
+      imagePath: 'assets/images/le_sserafim/eunchae.png',
     ),
-    KanbanTask('Jun Ga-ram', imagePath: 'assets/images/le_serrafim/kim.png'),
+    KanbanTask('Jun Ga-ram', imagePath: 'assets/images/le_sserafim/kim.png'),
   ];
 
   static const List<KanbanTask> _redVelvet = [
@@ -129,6 +129,7 @@ class _PresetTasks {
     KanbanTask('babymonster'),
     KanbanTask('katseye'),
     KanbanTask('twice'),
+    KanbanTask('new jeans'),
   ];
 }
 
